@@ -1,0 +1,72 @@
+name: Build and Release audio8-tts-engine
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+        include:
+          - os: ubuntu-22.04
+            artifact_name: audio8-tts-engine-linux
+            archive_cmd: tar -czvf audio8-tts-engine-linux.tar.gz build/audio8-tts-engine build/libonnxruntime.so voices/ models/ .
+            output_file: audio8-tts-engine-linux.tar.gz
+
+          - os: windows-2022
+            artifact_name: audio8-tts-engine-windows
+            archive_cmd: |
+              cd build/Release/
+              Compress-Archive -Path audio8-tts-engine, libonnxruntime.dll, models/, voices/  -DestinationPath ../../../../audio8-tts-engine-windows.zip
+            output_file: audio8-tts-engine-windows.zip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Create Archive (Package) (Linux)
+        if: ${{ matrix.os == 'ubuntu-22.04' }}
+        run: ${{ matrix.archive_cmd }}
+        shell: bash
+
+      - name: Create Archive (Package) (Windows)
+        if: ${{ matrix.os == 'windows-2022' }}
+        run: ${{ matrix.archive_cmd }}
+        shell: pwsh
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.output_file }}
+
+  publish:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./assets
+          merge-multiple: true
+
+      - name: Release to GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./assets/*
+          generate_release_notes: true
+          prerelease: true

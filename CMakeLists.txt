@@ -101,13 +101,15 @@ target_link_libraries(audio8
         tokenizers_cpp
 )
 
-add_executable(audio8-tts-engine main.cpp)
-target_link_libraries(audio8-tts-engine PRIVATE audio8)
+set(app_name audio8-tts-engine)
+
+add_executable(${app_name} main.cpp)
+target_link_libraries(${app_name} PRIVATE audio8)
 
 if(MSVC)
-    target_compile_options(audio8-tts-engine PRIVATE /utf-8)
+    target_compile_options(${app_name} PRIVATE /utf-8)
 
-    set_target_properties(audio8-tts-engine PROPERTIES
+    set_target_properties(${app_name} PROPERTIES
         VS_GLOBAL_EnableUnitySupport OFF
     )
     
@@ -123,11 +125,27 @@ if(MSVC)
         "</assembly>\n"
     )
     
-    target_sources(audio8-tts-engine PRIVATE "${MANIFEST_FILE}")
+    target_sources(${app_name} PRIVATE "${MANIFEST_FILE}")
 endif()
 
-add_custom_command(TARGET audio8-tts-engine POST_BUILD
+add_custom_command(TARGET ${app_name} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${onnxruntime_SOURCE_DIR}/lib/${ONNX_DLL_NAME}"
-    $<TARGET_FILE_DIR:audio8-tts-engine>
+    $<TARGET_FILE_DIR:${app_name}>
+)
+
+add_custom_command(
+  TARGET ${app_name}
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_CURRENT_SOURCE_DIR}/models
+          $<TARGET_FILE_DIR:${app_name}>/models
+)
+
+add_custom_command(
+  TARGET ${app_name}
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_CURRENT_SOURCE_DIR}/voices
+          $<TARGET_FILE_DIR:${app_name}>/voices
 )
