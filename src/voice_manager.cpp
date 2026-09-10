@@ -57,7 +57,7 @@ public:
         std::filesystem::path codes_path = voice_folder / (voice_name + ".bin");
 
         if ( !std::filesystem::exists( root ) ) {
-            std::filesystem::create_directories( voice_folder );
+            std::filesystem::create_directories( root );
         }
 
         if ( !std::filesystem::exists( voice_folder ) ) {
