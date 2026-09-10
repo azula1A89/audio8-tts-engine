@@ -22,7 +22,7 @@ jobs:
             artifact_name: audio8-tts-engine-windows
             archive_cmd: |
               cd build/Release/
-              Compress-Archive -Path audio8-tts-engine, libonnxruntime.dll, models/, voices/  -DestinationPath ../../../../audio8-tts-engine-windows.zip
+              Compress-Archive -Path audio8-tts-engine.exe, onnxruntime.dll, models/, voices/  -DestinationPath ../../audio8-tts-engine-windows.zip
             output_file: audio8-tts-engine-windows.zip
 
     steps:
