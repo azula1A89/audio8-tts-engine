@@ -5,6 +5,10 @@ A lightweight C++20 local inference engine for **Audio8-TTS**, implemented with 
 
 This project focuses on running the Audio8-TTS inference pipeline natively in C++, without depending on the original Python runtime. It provides text preprocessing, prompt construction, semantic/autoregressive generation, codec decoding, voice/reference management, sampling, and audio playback.
 
+Pre-built binaries are available on the releases page: 
+<[windows x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.1/audio8-tts-engine-windows.zip)>
+<[linux x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.1/audio8-tts-engine-linux.tar.gz)>
+
 > **Project status:** Experimental / early-stage open-source implementation.  
 > The inference pipeline is functional, but performance, audio quality, portability, and API stability may still be improved.
 
@@ -172,7 +176,7 @@ The model files are not included in this repository. Download them from the mode
 The current CMake configuration supports:
 
 - Windows x64
-- macOS ARM64
+- macOS ARM64 (Not tested)
 - Linux x64
 
 Other platforms may require changes to the ONNX Runtime package configuration.
@@ -226,7 +230,7 @@ After building, CMake automatically copies the `models/` and `voices/` directori
 audio8-tts-engine "Hello, this is Audio8 TTS."
 ```
 
-The current example application uses `anthony` as the default voice.
+The current example application uses `anthony(Female, Chinese)` as the default voice.
 
 ### 2. Use a specific reference voice
 
@@ -422,7 +426,7 @@ This is an early-stage implementation. Known areas for further work include:
 
 In particular, the current example performs codec decoding after the autoregressive generation stage completes. Although generated codebooks can be received through a callback, the demo application itself does not yet provide fully streamed PCM playback.
 
-## Relationship to Audio8-TTS
+## Relationship to [Audio8-TTS](https://github.com/Edge0-AI/Audio8_TTS)
 
 This repository is a C++ inference implementation built around the exported ONNX models from Audio8-TTS.
 
@@ -434,11 +438,11 @@ Please refer to the upstream Audio8-TTS project and model repository for model d
 
 This project uses the following open-source components:
 
-- fmt
-- nlohmann/json
-- miniaudio
-- ONNX Runtime
-- tokenizers-cpp
+- [fmt](https://github.com/fmtlib/fmt)
+- [nlohmann/json](https://github.com/nlohmann/json)
+- [miniaudio](https://github.com/mackron/miniaudio)
+- [ONNX Runtime](https://github.com/microsoft/onnxruntime)
+- [tokenizers-cpp](https://github.com/mlc-ai/tokenizers-cpp.git)
 
 Please refer to each project's own license and repository for the applicable terms.
 
