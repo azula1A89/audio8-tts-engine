@@ -1,13 +1,19 @@
 # Audio8 TTS Engine
 [![Build and Release audio8-tts-engine](https://github.com/azula1A89/audio8-tts-engine/actions/workflows/build.yml/badge.svg)](https://github.com/azula1A89/audio8-tts-engine/actions/workflows/build.yml)
 
+<div align="center">
+中文文档: [README_zh.md](README_zh.md)
+</div>
+
 A lightweight C++20 local inference engine for **Audio8-TTS**, implemented with **ONNX Runtime C++ API**.
 
 This project focuses on running the Audio8-TTS inference pipeline natively in C++, without depending on the original Python runtime. It provides text preprocessing, prompt construction, semantic/autoregressive generation, codec decoding, voice/reference management, sampling, and audio playback.
 
 Pre-built binaries are available on the releases page: 
-<[windows x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.1/audio8-tts-engine-windows.zip)>
-<[linux x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.1/audio8-tts-engine-linux.tar.gz)>
+
+- [Windows x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.1/audio8-tts-engine-windows.zip)
+- [Linux x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.1/audio8-tts-engine-linux.tar.gz)
+
 
 > **Project status:** Experimental / early-stage open-source implementation.  
 > The inference pipeline is functional, but performance, audio quality, portability, and API stability may still be improved.
