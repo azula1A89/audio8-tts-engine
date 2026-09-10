@@ -116,7 +116,7 @@ For autoregressive inference, the implementation maintains KV caches in C++ and 
 │
 └── voices/
     ├── anthony/
-    └── en/
+    └── tom/
 ```
 
 ### Main components
@@ -241,7 +241,7 @@ The current example application uses `anthony(Female, Chinese)` as the default v
 ### 2. Use a specific reference voice
 
 ```bash
-audio8-tts-engine "Hello, nice to meet you." anthony
+audio8-tts-engine "Hello, nice to meet you." tom
 ```
 
 The voice name corresponds to a directory under `voices/`.
@@ -326,7 +326,7 @@ engine.preload_model();
 
 TTSRequest request;
 request.text = "Hello from Audio8 TTS.";
-request.voice_name = "anthony";
+request.voice_name = "tom";
 request.max_new_tokens = 1024;
 
 engine.synthesize(

@@ -117,7 +117,7 @@
 │
 └── voices/
     ├── anthony/
-    └── en/
+    └── tom/
 ```
 
 ### 主要组件
@@ -248,7 +248,7 @@ audio8-tts-engine "Hello, this is Audio8 TTS."
 ### 2. 使用指定音色
 
 ```bash
-audio8-tts-engine "Hello, nice to meet you." anthony
+audio8-tts-engine "朋友们大家好，我是anthony。" anthony
 ```
 
 音色名称对应 `voices/` 下的目录名称。
@@ -258,13 +258,13 @@ audio8-tts-engine "Hello, nice to meet you." anthony
 ```text
 voices/
 ├── anthony/
-└── en/
+└── tom/
 ```
 
 可以使用：
 
 ```bash
-audio8-tts-engine "Hello, nice to meet you." en
+audio8-tts-engine "Hello, nice to meet you." tom
 ```
 
 ### 3. 注册新的音色
@@ -347,7 +347,7 @@ engine.preload_model();
 
 TTSRequest request;
 request.text = "Hello from Audio8 TTS.";
-request.voice_name = "anthony";
+request.voice_name = "tom";
 request.max_new_tokens = 1024;
 
 engine.synthesize(
