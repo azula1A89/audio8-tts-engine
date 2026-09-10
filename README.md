@@ -1,9 +1,9 @@
 # Audio8 TTS Engine
 [![Build and Release audio8-tts-engine](https://github.com/azula1A89/audio8-tts-engine/actions/workflows/build.yml/badge.svg)](https://github.com/azula1A89/audio8-tts-engine/actions/workflows/build.yml)
 
-<div align="center">
+
 中文文档: [README_zh.md](README_zh.md)
-</div>
+
 
 A lightweight C++20 local inference engine for **Audio8-TTS**, implemented with **ONNX Runtime C++ API**.
 
