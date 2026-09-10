@@ -240,7 +240,7 @@ audio8-tts-engine.exe
 ### 1. 使用默认音色
 
 ```bash
-audio8-tts-engine "Hello, this is Audio8 TTS."
+./audio8-tts-engine "Hello, this is Audio8 TTS."
 ```
 
 当前示例程序默认使用 `anthony` 音色。
@@ -248,7 +248,7 @@ audio8-tts-engine "Hello, this is Audio8 TTS."
 ### 2. 使用指定音色
 
 ```bash
-audio8-tts-engine "朋友们大家好，我是anthony。" anthony
+./audio8-tts-engine "朋友们大家好，我是anthony。" anthony
 ```
 
 音色名称对应 `voices/` 下的目录名称。
@@ -264,7 +264,7 @@ voices/
 可以使用：
 
 ```bash
-audio8-tts-engine "Hello, nice to meet you." tom
+./audio8-tts-engine "Hello, nice to meet you." tom
 ```
 
 ### 3. 注册新的音色
@@ -278,7 +278,7 @@ audio8-tts-engine "Hello, nice to meet you." tom
 例如：
 
 ```bash
-audio8-tts-engine my_voice "This is the transcript of the reference audio." reference.wav
+./audio8-tts-engine my_voice "This is the transcript of the reference audio." reference.wav
 ```
 
 注册过程：

@@ -233,7 +233,7 @@ After building, CMake automatically copies the `models/` and `voices/` directori
 ### 1. Use the default voice
 
 ```bash
-audio8-tts-engine "Hello, this is Audio8 TTS."
+./audio8-tts-engine "Hello, this is Audio8 TTS."
 ```
 
 The current example application uses `anthony(Female, Chinese)` as the default voice.
@@ -241,7 +241,7 @@ The current example application uses `anthony(Female, Chinese)` as the default v
 ### 2. Use a specific reference voice
 
 ```bash
-audio8-tts-engine "Hello, nice to meet you." tom
+./audio8-tts-engine "Hello, nice to meet you." tom
 ```
 
 The voice name corresponds to a directory under `voices/`.
@@ -257,7 +257,7 @@ Provide:
 Example:
 
 ```bash
-audio8-tts-engine my_voice "This is the transcript of the reference audio." reference.wav
+./audio8-tts-engine my_voice "This is the transcript of the reference audio." reference.wav
 ```
 
 The registration process:
