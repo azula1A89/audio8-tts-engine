@@ -15,7 +15,7 @@ jobs:
         include:
           - os: ubuntu-22.04
             artifact_name: audio8-tts-engine-linux
-            archive_cmd: tar -czvf audio8-tts-engine-linux.tar.gz build/audio8-tts-engine build/libonnxruntime.so voices/ models/
+            archive_cmd: tar -czvf audio8-tts-engine-linux.tar.gz -C build audio8-tts-engine libonnxruntime.so voices/ models/
             output_file: audio8-tts-engine-linux.tar.gz
 
           - os: windows-2022
