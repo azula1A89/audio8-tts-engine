@@ -1,4 +1,5 @@
 # Audio8 TTS Engine
+[![Build and Release audio8-tts-engine](https://github.com/azula1A89/audio8-tts-engine/actions/workflows/build.yml/badge.svg)](https://github.com/azula1A89/audio8-tts-engine/actions/workflows/build.yml)
 
 A lightweight C++20 local inference engine for **Audio8-TTS**, implemented with **ONNX Runtime C++ API**.
 
@@ -443,11 +444,7 @@ Please refer to each project's own license and repository for the applicable ter
 
 ## License
 
-This repository currently does not include a license file.
-
-If you publish this project publicly, it is recommended to add a `LICENSE` file and clearly specify the license under which your C++ source code is released.
-
-Also verify that the licenses and redistribution terms of the Audio8-TTS model and all third-party dependencies permit your intended use.
+MIT License
 
 ## Acknowledgements
 

@@ -6,4 +6,4 @@ fmt: https://github.com/fmtlib/fmt
 json: https://github.com/nlohmann/json
 miniaudio: https://github.com/mackron/miniaudio
 onnxruntime: https://github.com/microsoft/onnxruntime
-tokenizers.cpp: https://github.com/bluryar/tokenizers.cpp
+tokenizers-cpp: https://github.com/mlc-ai/tokenizers-cpp.git
