@@ -31,6 +31,41 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 
 FetchContent_Declare(
+    glew
+    URL https://github.com/nigels-com/glew/archive/refs/tags/glew-2.3.1.zip
+)
+FetchContent_MakeAvailable(glew)
+
+FetchContent_Declare(
+    glfw
+    URL https://github.com/glfw/glfw/releases/download/3.5.1/glfw-3.5.1.zip
+)
+FetchContent_MakeAvailable(glfw)
+
+FetchContent_Declare(
+    imgui
+    URL https://github.com/ocornut/imgui/archive/refs/tags/v1.92.9b.zip
+)
+FetchContent_MakeAvailable(imgui)
+
+if(NOT TARGET imgui)
+    target_include_directories(glew PRIVATE ${glew_SOURCE_DIR}/include)
+    add_subdirectory(${glew_SOURCE_DIR}/build/cmake)
+    add_library(imgui STATIC
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
+    )
+    target_include_directories(imgui PUBLIC "${imgui_SOURCE_DIR}")
+    target_include_directories(imgui PUBLIC "${imgui_SOURCE_DIR}/misc")
+    target_include_directories(imgui PUBLIC "${imgui_SOURCE_DIR}/misc/cpp")
+endif()
+
+FetchContent_Declare(
     json
     URL https://github.com/nlohmann/json/releases/download/v3.12.0/include.zip
 )
