@@ -230,5 +230,9 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E copy_directory 
           ${imgui_SOURCE_DIR}/misc/fonts
           $<TARGET_FILE_DIR:${app_name}>/fonts
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/imgui.ini"
+    $<TARGET_FILE_DIR:${app_name}>
 )
 

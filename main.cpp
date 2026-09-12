@@ -52,7 +52,7 @@ int main(int argc, char** argv)
     
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    GLFWwindow*main_window = glfwCreateWindow(1200, 800, "audio8-tts-engine", NULL, NULL);
+    GLFWwindow*main_window = glfwCreateWindow(1200, 466, "audio8-tts-engine", NULL, NULL);
     if (main_window == NULL) {
         glfwTerminate();
         return GL_FALSE;
@@ -80,11 +80,13 @@ int main(int argc, char** argv)
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / 
-    auto cjk = io.Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf");
+    
     ImGuiTheme::ApplyTweakedTheme(ImGuiTheme::ImGuiTheme_Darcula);
-    auto english = io.Fonts->AddFontFromFileTTF("fonts/Cousine-Regular.ttf");
-    float xscale, yscale;
 
+    auto cjk = io.Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf");
+    auto english = io.Fonts->AddFontFromFileTTF("fonts/Cousine-Regular.ttf");
+
+    float xscale, yscale;
     glfwGetWindowContentScale((GLFWwindow *) main_window, &xscale, &yscale);
 
     ImGuiStyle& style = ImGui::GetStyle();
@@ -99,8 +101,6 @@ int main(int argc, char** argv)
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(main_window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
-
-
 
     std::string txt = "大家好，我是ansony。";
     bool is_loading = true;
