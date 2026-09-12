@@ -47,6 +47,12 @@ set(BUILD_UTILS OFF CACHE BOOL "" FORCE)
 include(FetchContent)
 
 FetchContent_Declare(
+    nfd
+    URL https://github.com/btzy/nativefiledialog-extended/archive/refs/tags/v1.3.0.tar.gz
+)
+FetchContent_MakeAvailable(nfd)
+
+FetchContent_Declare(
     glew
     URL https://github.com/nigels-com/glew/releases/download/glew-2.3.1/glew-2.3.1.tgz
 )
@@ -200,11 +206,12 @@ if (WIN32)
   target_link_libraries(${app_name} PRIVATE
     audio8
     imgui
+    nfd
     winmm      # Windows Multimedia API (needed for audio)
     gdi32      # Graphics Device Interface (needed for OpenGL)
   )
 else()
-    target_link_libraries(${app_name} PRIVATE audio8 imgui)
+    target_link_libraries(${app_name} PRIVATE audio8 imgui nfd)
 endif()
 
 if(MSVC)
