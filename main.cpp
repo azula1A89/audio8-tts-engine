@@ -9,38 +9,13 @@
 #include <imgui_stdlib.h>
 #include <future>
 #include "main.hpp"
+#include <nfd.hpp>
 
-using namespace std::literals;
-
-void imgui_parent_window()
-{
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking;
-    ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-    ImGui::SetNextWindowSize(viewport->WorkSize);
-    ImGui::SetNextWindowViewport(viewport->ID);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-    window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |ImGuiWindowFlags_NoBackground;
-
-    bool p_open = true;
-    ImGui::Begin("MyDockSpace", &p_open, window_flags);
-
-    ImGui::PopStyleVar(3);
-
-    // DockSpace
-    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_DockingEnable)
-    {
-        ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
-        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_AutoHideTabBar);
-    }
-    ImGui::End();
-}
-
+std::string choose_data_path();
+void imgui_parent_window();
 float progress = 0.0f;
 float eta = -1.0f;
+
 int main(int argc, char** argv)
 {
     const char* glsl_version = "#version 330";
@@ -101,10 +76,16 @@ int main(int argc, char** argv)
     ImGui_ImplGlfw_InitForOpenGL(main_window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    std::string txt = "大家好，我是ansony。";
+    std::string txt = "大家好，我是anthony。";
     bool is_loading = true;
     bool is_running = false;
-    bool open_demo = true;
+    bool is_encoding = false;
+
+    std::vector<std::string> voices;
+    std::string new_voice_name;
+    std::string transcript;
+    std::string ref_audio_path;
+    TTSRequest request{};
 
     std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>();
     if( !engine->initialize() ) return -1;
@@ -115,6 +96,7 @@ int main(int argc, char** argv)
     });
 
     std::future<void> synthesize_status = {};
+    std::future<void> registration_status = {};
 
     // Main loop
     while ( glfwWindowShouldClose(main_window) == GL_FALSE )
@@ -130,60 +112,124 @@ int main(int argc, char** argv)
         //root window
         imgui_parent_window();
 
+        if ( voices.empty() ) {
+            voices = engine->list_voices();
+        }
+
         // main window
         {
             imgui_scoped::Font font(english);
-            ImGui::Begin("main");
+            ImGui::Begin("main", NULL, ImGuiWindowFlags_MenuBar);
             
             {
                 imgui_scoped::Disabled disable(is_loading);
-                if(ImGui::Button("run")) {
+                if (ImGui::BeginMenuBar()) {
 
-                    if ( !is_running && !txt.empty() ) {
-                        synthesize_status = std::async(std::launch::async, [&](){
-                            TTSRequest request;
-                            request.text = txt;
-                            request.voice_name = "anthony";
-                            request.max_new_tokens = 1024;
-                            engine->synthesize( request, [](float progress_in, float eta_in){
-                                progress = progress_in;
-                                eta = eta_in;
-                            });
-                        });
+                    // select voice profile
+                    if (ImGui::BeginMenu("voices")) {
+
+                        for (const auto& voice : voices ) {
+                            if ( ImGui::MenuItem( voice.c_str() ) ) {
+                                request.voice_name = voice;
+                            }
+                        }
+
+                        ImGui::EndMenu();
                     }
-                }
 
-                ImGui::SameLine();
-                if ( ImGui::Button("cancel") ) {
-                    engine->cancel();
+                    // generate speech
+                    if ( ImGui::MenuItem("run") ) {
+                        if ( !is_running && !txt.empty() ) {
+                            synthesize_status = std::async(std::launch::async, [&](){
+                                request.text = txt;
+                                request.voice_name = request.voice_name.empty()?"anthony":request.voice_name;
+                                request.max_new_tokens = 1024;
+                                engine->synthesize( request, [](float progress_in, float eta_in){
+                                    progress = progress_in;
+                                    eta = eta_in;
+                                });
+                            });
+                        }
+                    }
+
+                    // cancle generation
+                    if ( ImGui::MenuItem("cancle") ) {
+                        engine->cancel();
+                    }
+
+                    {
+                        imgui_scoped::Disabled disable(is_running);
+                        if ( ImGui::MenuItem("play") ) {
+                            miniaudio_impl::play();
+                        }
+
+                        if ( ImGui::MenuItem("stop") ) {
+                            miniaudio_impl::stop();
+                        }
+                    }
+
+                    {
+                        imgui_scoped::Disabled disable(is_running || is_loading);
+                        if (ImGui::MenuItem("registration")) {
+
+                            ImGui::OpenPopup("registration");
+                        }
+
+                        if (ImGui::BeginPopupModal("registration", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+                        {
+                            ImGui::InputText("voice name", &new_voice_name);
+                            ImGui::InputText("transcript", &transcript);
+                            ImGui::InputTextWithHint("ref audio", "audio file path", &ref_audio_path);
+                            ImGui::SameLine();
+                            if (ImGui::Button("choose")) {
+                                ref_audio_path = choose_data_path();
+                            }
+
+                            if (ImGui::Button("OK", ImVec2(120, 0))) {
+                                registration_status = std::async(std::launch::async, [&](){
+                                    
+                                    engine->registers(new_voice_name, transcript, ref_audio_path);
+                                });
+                                
+                                ImGui::CloseCurrentPopup();
+                            }
+
+                            ImGui::SetItemDefaultFocus();
+                            ImGui::SameLine();
+                            if (ImGui::Button("Cancel", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
+                            ImGui::EndPopup();
+                        }
+                    }
+
+                    ImGui::EndMenuBar();
                 }
             }
 
-            {
-                imgui_scoped::Disabled disable(is_running);
-                ImGui::SameLine();
-                if(ImGui::Button("play")) {
-                    miniaudio_impl::play();
-                }
-
-                ImGui::SameLine();
-                if(ImGui::Button("stop")) {
-                    miniaudio_impl::stop();
-                }
-            }
 
             if ( is_loading ) {
-                ImGui::SameLine();
+
                 ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Loading..");
+            }
+
+            if ( registration_status.valid() ) {
+                is_encoding = true;
+                ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Encoding..");
+
+                if ( std::future_status::ready == registration_status.wait_for(std::chrono::milliseconds(1)) ) {
+                    registration_status.get();
+                    registration_status = {};
+                    is_encoding = false;
+                    voices = engine->list_voices();
+                }
             }
 
             if ( synthesize_status.valid() ) {
                 is_running = true;
                 if ( eta < 0 ) {
-                    ImGui::SameLine();
+
                     ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "Generating..");
                 } else {
-                    ImGui::SameLine();
+
                     ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Decoding..");
                 }
                 
@@ -199,7 +245,7 @@ int main(int argc, char** argv)
                 imgui_scoped::Font font(cjk);
                 imgui_scoped::Disabled disable(is_running);
                 ImGui::InputTextMultiline("##text to speak", &txt,
-                    ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16), 
+                    ImVec2(-FLT_MIN, -FLT_MIN), 
                     0);
             }
 
@@ -229,6 +275,46 @@ int main(int argc, char** argv)
     return 0;
 }
 
+std::string choose_data_path()
+{
+    std::string path="";
+    NFD::Guard nfd_guard;
+    NFD::UniquePath out_path;
+    nfdfilteritem_t filter_item[1] = {{"*", "wav"}};
+    std::string default_path = std::filesystem::current_path().string();
+    nfdresult_t result = NFD::OpenDialog(out_path, filter_item, 1, default_path.c_str());
+    if (result == NFD_OKAY){
+        path = out_path.get();
+    }
+    return path;
+}
+
+void imgui_parent_window()
+{
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking;
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+    window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |ImGuiWindowFlags_NoBackground;
+
+    bool p_open = true;
+    ImGui::Begin("MyDockSpace", &p_open, window_flags);
+
+    ImGui::PopStyleVar(3);
+
+    // DockSpace
+    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_DockingEnable)
+    {
+        ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_AutoHideTabBar);
+    }
+    ImGui::End();
+}
 
 
 
