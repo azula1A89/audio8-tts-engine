@@ -179,7 +179,7 @@ int main(int argc, char** argv)
                         {
                             ImGui::InputText("voice name", &new_voice_name);
                             ImGui::InputText("transcript", &transcript);
-                            ImGui::InputTextWithHint("ref audio", "audio file path", &ref_audio_path);
+                            ImGui::InputTextWithHint("##ref audio", "audio file path", &ref_audio_path);
                             ImGui::SameLine();
                             if (ImGui::Button("choose")) {
                                 ref_audio_path = choose_data_path();
@@ -280,7 +280,8 @@ std::string choose_data_path()
     std::string path="";
     NFD::Guard nfd_guard;
     NFD::UniquePath out_path;
-    nfdfilteritem_t filter_item[1] = {{"*", "wav"}};
+    nfdfilteritem_t filter_item[3] = {
+        {"*", "wav,mp3,flac"}};
     std::string default_path = std::filesystem::current_path().string();
     nfdresult_t result = NFD::OpenDialog(out_path, filter_item, 1, default_path.c_str());
     if (result == NFD_OKAY){
