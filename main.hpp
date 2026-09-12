@@ -1,13 +1,10 @@
 #pragma once
 
-#pragma once
-
 #include <imgui.h>
 #include <utility>
 
 namespace imgui_scoped {
 
-    // NonCopyable 基类：防止 RAII 对象被误拷贝导致多次 Pop
     class NonCopyable {
     protected:
         NonCopyable() = default;
@@ -22,7 +19,7 @@ namespace imgui_scoped {
     // 1. Style Color & Style Var 作用域
     // ==========================================
 
-    /// 自动 Push/PopStyleColor
+    /// Push/PopStyleColor
     class StyleColor : private NonCopyable {
     public:
         StyleColor(ImGuiCol idx, ImU32 col, bool condition = true)
@@ -35,7 +32,6 @@ namespace imgui_scoped {
             if (condition) ImGui::PushStyleColor(idx, col);
         }
 
-        // 支持一次性传递多个 StyleColor（ initializer_list ）
         StyleColor(std::initializer_list<std::pair<ImGuiCol, ImVec4>> styles)
             : m_Count(static_cast<int>(styles.size())) {
             for (const auto& style : styles) {
@@ -51,7 +47,7 @@ namespace imgui_scoped {
         int m_Count = 0;
     };
 
-    /// 自动 Push/PopStyleVar
+    /// Push/PopStyleVar
     class StyleVar : private NonCopyable {
     public:
         StyleVar(ImGuiStyleVar idx, float val, bool condition = true)
@@ -72,11 +68,8 @@ namespace imgui_scoped {
         int m_Count = 0;
     };
 
-    // ==========================================
-    // 2. ID 空间作用域
-    // ==========================================
 
-    /// 自动 Push/PopID
+    /// Push/PopID
     class ID : private NonCopyable {
     public:
         explicit ID(const char* str_id) { ImGui::PushID(str_id); }
@@ -87,11 +80,8 @@ namespace imgui_scoped {
         ~ID() { ImGui::PopID(); }
     };
 
-    // ==========================================
-    // 3. 字体 & 元素尺寸作用域
-    // ==========================================
 
-    /// 自动 Push/PopFont
+    /// Push/PopFont
     class Font : private NonCopyable {
     public:
         explicit Font(ImFont* font) : m_Active(font != nullptr) {
@@ -106,25 +96,21 @@ namespace imgui_scoped {
         bool m_Active = false;
     };
 
-    /// 自动 SetNextItemWidth / Push/PopItemWidth
+    /// SetNextItemWidth / Push/PopItemWidth
     class ItemWidth : private NonCopyable {
     public:
         explicit ItemWidth(float item_width) { ImGui::PushItemWidth(item_width); }
         ~ItemWidth() { ImGui::PopItemWidth(); }
     };
 
-    /// 自动 Push/PopTextWrapPos
+    /// Push/PopTextWrapPos
     class TextWrapPos : private NonCopyable {
     public:
         explicit TextWrapPos(float wrap_local_pos_x = 0.0f) { ImGui::PushTextWrapPos(wrap_local_pos_x); }
         ~TextWrapPos() { ImGui::PopTextWrapPos(); }
     };
 
-    // ==========================================
-    // 4. 容器与布局作用域 (Begin/End 包装)
-    // ==========================================
-
-    /// 自动 Begin/EndChild
+    /// Begin/EndChild
     class Child : private NonCopyable {
     public:
         Child(const char* str_id, const ImVec2& size = ImVec2(0, 0), bool border = false, ImGuiWindowFlags flags = 0) {
@@ -145,7 +131,7 @@ namespace imgui_scoped {
         bool m_Open = false;
     };
 
-    /// 自动 BeginTable/EndTable
+    /// BeginTable/EndTable
     class Table : private NonCopyable {
     public:
         Table(const char* str_id, int columns, ImGuiTableFlags flags = 0, const ImVec2& outer_size = ImVec2(0.0f, 0.0f), float inner_width = 0.0f) {
@@ -162,7 +148,7 @@ namespace imgui_scoped {
         bool m_Open = false;
     };
 
-    /// 自动 Indent/Unindent
+    /// Indent/Unindent
     class Indent : private NonCopyable {
     public:
         explicit Indent(float indent_w = 0.0f) : m_Width(indent_w) { ImGui::Indent(m_Width); }
@@ -172,14 +158,12 @@ namespace imgui_scoped {
         float m_Width;
     };
 
-    /// 自动 Group (将多个 Widget 组合为一个逻辑组件)
     class Group : private NonCopyable {
     public:
         Group() { ImGui::BeginGroup(); }
         ~Group() { ImGui::EndGroup(); }
     };
 
-    /// 自动 Enable/Disable 禁用状态域 (需要 ImGui 1.84+)
 #if defined(IMGUI_VERSION_NUM) && IMGUI_VERSION_NUM >= 18400
     class Disabled : private NonCopyable {
     public:
