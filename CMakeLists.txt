@@ -44,6 +44,29 @@ option(GLFW_INSTALL "Generate installation target" OFF)
 option(GLFW_DOCUMENT_INTERNALS "Include internals in documentation" OFF)
 set(BUILD_UTILS OFF CACHE BOOL "" FORCE)
 
+# Set RPATH for Linux to enable running without installation
+if (UNIX AND NOT APPLE)
+  # Use RPATH instead of RUNPATH
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--disable-new-dtags")
+  
+  # Set RPATH to include:
+  # The build directory
+  set(CMAKE_INSTALL_RPATH "$ORIGIN/")
+  
+  # Add the automatically determined parts of the RPATH
+  # which point to directories outside the build tree to the install RPATH
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+  
+  # Use RPATH for build tree
+  set(CMAKE_SKIP_BUILD_RPATH FALSE)
+  
+  # Build with RPATH pointing to the build tree
+  set(CMAKE_BUILD_RPATH "$ORIGIN/")
+  
+  # Don't use the install RPATH when building
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+endif()
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -142,6 +165,7 @@ else()
     set(ONNXHASH SHA256=c3fddc4f139a045b0c4902c57410f0694f1c2fdf9b6939fbe38b1aeae7cd14ba)
     set(ONNX_DLL_NAME "libonnxruntime.so")
     set(ONNX_LIB_NAME "libonnxruntime.so")
+    set(GLEW_DLL_PATH ${CMAKE_CURRENT_BINARY_DIR}/lib/libGLEW.so.2.3)
 endif()
 
 FetchContent_Declare(
@@ -236,17 +260,13 @@ if(MSVC)
     target_sources(${app_name} PRIVATE "${MANIFEST_FILE}")
 endif()
 
-if (WIN32)
-    add_custom_command(TARGET ${app_name} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${GLEW_DLL_PATH}"
-        $<TARGET_FILE_DIR:${app_name}>
-    )
-endif()
-
 add_custom_command(TARGET ${app_name} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${onnxruntime_SOURCE_DIR}/lib/${ONNX_DLL_NAME}"
+    $<TARGET_FILE_DIR:${app_name}>
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${GLEW_DLL_PATH}"
     $<TARGET_FILE_DIR:${app_name}>
 )
 

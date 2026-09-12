@@ -15,20 +15,25 @@ jobs:
         include:
           - os: ubuntu-22.04
             artifact_name: audio8-tts-engine-linux
-            archive_cmd: tar -czvf audio8-tts-engine-linux.tar.gz -C build audio8-tts-engine libonnxruntime.so voices/ models/
+            archive_cmd: tar -czvf audio8-tts-engine-linux.tar.gz -C build audio8-tts-engine libonnxruntime.so libGLEW.so.2.3 voices/ models/
             output_file: audio8-tts-engine-linux.tar.gz
 
           - os: windows-2022
             artifact_name: audio8-tts-engine-windows
             archive_cmd: |
               cd build/Release/
-              Compress-Archive -Path audio8-tts-engine.exe, onnxruntime.dll, models/, voices/  -DestinationPath ../../audio8-tts-engine-windows.zip
+              Compress-Archive -Path audio8-tts-engine.exe, onnxruntime.dll, glew32.dll, models/, voices/  -DestinationPath ../../audio8-tts-engine-windows.zip
             output_file: audio8-tts-engine-windows.zip
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
+      - name: Install OpenGL dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev libxrandr-dev libxinerama-dev libwayland-dev libxkbcommon-dev xorg-dev libsdl2-dev libsdl2-ttf-dev libdbus-1-dev
+        shell: bash
+        if: matrix.os == 'ubuntu-22.04'
+
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
