@@ -165,7 +165,10 @@ public:
             return;
         }
 
-        auto progress = [&progress_cb](float p){ if (progress_cb) progress_cb(p); };
+        cancel_requested_.store(false);
+        auto progress = [&progress_cb](float p, float eta = -1.0f){ 
+            if (progress_cb) progress_cb(p, eta);
+        };
 
         VoiceProfile profile;
         bool ret = voice_manager_->load_profile(request.voice_name, profile);
@@ -199,13 +202,13 @@ public:
 
                 // fmt::print("\n\n STOP SIGN FOUND. \n\n");
                 size_t total_frames = frames.size();
-                float predicted_decoder_cost_ms = codec_decoder_->estimate_decode_time_ms(total_frames);
+                float eta = 1e-3f * codec_decoder_->estimate_decode_time_ms(total_frames);
                 
-                fmt::print("\n decoder ETA {:.1f}sec. \n", predicted_decoder_cost_ms * 1e-3);
+                fmt::print("\n decoder ETA {:.1f}sec. \n", eta );
 
-                progress(0.9f);
+                progress(0.9f, eta);
                 codec_decoder_->decode_audio_batch(frames);
-                progress(1.0f);
+                progress(1.0f, eta);
                 return;
             }
             previous.push_back(semantic);
@@ -323,4 +326,8 @@ void Audio8Engine::uninit() { pImpl->uninit(); }
 void Audio8Engine::synthesize( const TTSRequest& request, progress_callback progress, codebooks_callback codebook) {
     pImpl->synthesize(request, progress, codebook);
 };
+
+void Audio8Engine::cancel() {
+    pImpl->cancel();
+}
 

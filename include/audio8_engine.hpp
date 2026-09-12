@@ -173,7 +173,7 @@ struct TTSRequest
 };
 
 typedef void (*codebooks_callback) (const int64_t* v, size_t size);
-typedef void (*progress_callback) (float progress);
+typedef void (*progress_callback) (float progress, float decode_eta);
 
 class Audio8Engine 
 {
@@ -195,4 +195,5 @@ public:
     void preload_model();
     void uninit();
     void synthesize( const TTSRequest& request, progress_callback progress = nullptr, codebooks_callback codebook = nullptr);
+    void cancel();
 };
