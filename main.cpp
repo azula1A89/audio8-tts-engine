@@ -11,7 +11,7 @@
 #include "main.hpp"
 #include <nfd.hpp>
 
-std::string choose_data_path();
+std::string choose_audio_path();
 void imgui_parent_window();
 float progress = 0.0f;
 float eta = -1.0f;
@@ -182,7 +182,7 @@ int main(int argc, char** argv)
                             ImGui::InputTextWithHint("##ref audio", "audio file path", &ref_audio_path);
                             ImGui::SameLine();
                             if (ImGui::Button("choose")) {
-                                ref_audio_path = choose_data_path();
+                                ref_audio_path = choose_audio_path();
                             }
 
                             if (ImGui::Button("OK", ImVec2(120, 0))) {
@@ -275,7 +275,7 @@ int main(int argc, char** argv)
     return 0;
 }
 
-std::string choose_data_path()
+std::string choose_audio_path()
 {
     std::string path="";
     NFD::Guard nfd_guard;
