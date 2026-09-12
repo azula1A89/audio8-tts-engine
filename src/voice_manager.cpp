@@ -214,6 +214,9 @@ private:
         } catch(const Ort::Exception& exception) {
             fmt::print("{}\n", exception.what());
         }
+        
+        session_.reset();
+        initialized_ = false;
         return ret;
     }
 
