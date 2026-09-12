@@ -42,6 +42,7 @@ option(GLFW_BUILD_TESTS "Build the GLFW test programs" OFF)
 option(GLFW_BUILD_DOCS "Build the GLFW documentation" OFF)
 option(GLFW_INSTALL "Generate installation target" OFF)
 option(GLFW_DOCUMENT_INTERNALS "Include internals in documentation" OFF)
+set(BUILD_UTILS OFF CACHE BOOL "" FORCE)
 
 include(FetchContent)
 
@@ -119,6 +120,12 @@ if(WIN32)
     set(ONNXHASH SHA256=c9b4b7086b529ad814f428c1bad028e20a25d7dc0699836775faace4ab5b78b2)
     set(ONNX_DLL_NAME "onnxruntime.dll")
     set(ONNX_LIB_NAME "onnxruntime.lib")
+    if( CMAKE_BUILD_TYPE STREQUAL "Debug" )
+        set(GLEW_DLL_PATH ${CMAKE_CURRENT_BINARY_DIR}/bin/Debug/glew32d.dll)
+    elseif ( CMAKE_BUILD_TYPE STREQUAL "Release")
+        set(GLEW_DLL_PATH ${CMAKE_CURRENT_BINARY_DIR}/bin/Release/glew32.dll)
+    endif()
+    
 elseif(APPLE)
     set(ONNXURL https://github.com/microsoft/onnxruntime/releases/download/v1.29.0/onnxruntime-osx-arm64-1.29.0.tgz)
     set(ONNXHASH SHA256=d0706fc34f315d8c88639d0a8c81f2e09e815f282cabed3493c06a054352cf92)
@@ -162,6 +169,8 @@ else()
     )
 endif()
 
+find_package(OpenGL REQUIRED)
+
 file(GLOB_RECURSE _HDRS "include/*.hpp")
 file(GLOB_RECURSE _SRCS "src/*.cpp" "src/*.hpp")
 
@@ -181,8 +190,22 @@ target_link_libraries(audio8
 
 set(app_name audio8-tts-engine)
 
-add_executable(${app_name} main.cpp)
-target_link_libraries(${app_name} PRIVATE audio8 imgui)
+if (WIN32)
+  add_executable(${app_name} WIN32 main.cpp)
+else()
+  add_executable(${app_name} main.cpp)
+endif()
+
+if (WIN32)
+  target_link_libraries(${app_name} PRIVATE
+    audio8
+    imgui
+    winmm      # Windows Multimedia API (needed for audio)
+    gdi32      # Graphics Device Interface (needed for OpenGL)
+  )
+else()
+    target_link_libraries(${app_name} PRIVATE audio8 imgui)
+endif()
 
 if(MSVC)
     target_compile_options(${app_name} PRIVATE /utf-8)
@@ -204,6 +227,14 @@ if(MSVC)
     )
     
     target_sources(${app_name} PRIVATE "${MANIFEST_FILE}")
+endif()
+
+if (WIN32)
+    add_custom_command(TARGET ${app_name} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${GLEW_DLL_PATH}"
+        $<TARGET_FILE_DIR:${app_name}>
+    )
 endif()
 
 add_custom_command(TARGET ${app_name} POST_BUILD
