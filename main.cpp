@@ -1,64 +1,235 @@
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+#include <imgui.h>
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_opengl3.h>
 #include <fmt/color.h>
 #include <fmt/ranges.h>
 #include <audio8_engine.hpp>
-#include <iostream>
+#include <imgui_theme.h>
+#include <imgui_stdlib.h>
+#include <future>
+#include "main.hpp"
 
 using namespace std::literals;
 
-void progress(float progress) {
-    fmt::print( fmt::emphasis::bold | fg(fmt::color::pale_green), 
-    "\r progress: {:.1f}%", progress * 100);
-};
+void imgui_parent_window()
+{
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking;
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+    window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |ImGuiWindowFlags_NoBackground;
 
-int main(int argc, char** argv) {
-    std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>();
-    if( !engine->initialize() ) return -1;
+    bool p_open = true;
+    ImGui::Begin("MyDockSpace", &p_open, window_flags);
 
-    if (argc < 2) {
-        fmt::print(fmt::emphasis::bold, "\n\nUsage:\n");
-        fmt::print(fmt::emphasis::bold, "  1. TTS using default voice:\n");
-        fmt::print("     {} <text>\n\n", argv[0]);
-        fmt::print(fmt::emphasis::bold, "  2. TTS using specific voice:\n");
-        fmt::print("     {} <text> <voice name>\n\n", argv[0]);
-        fmt::print(fmt::emphasis::bold, "  3. Voice registration:\n");
-        fmt::print("     {} <voice name> <transcript> <audio>\n\n", argv[0]);
-        fmt::print(fmt::emphasis::bold, "all available voices: {}\n", engine->list_voices());
-        return -1;
+    ImGui::PopStyleVar(3);
+
+    // DockSpace
+    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_DockingEnable)
+    {
+        ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_AutoHideTabBar);
+    }
+    ImGui::End();
+}
+
+float progress = 0.0f;
+float eta = -1.0f;
+int main(int argc, char** argv)
+{
+    const char* glsl_version = "#version 330";
+
+    if (glfwInit() == GL_FALSE){
+        return GL_FALSE;
     }
     
-    engine->preload_model();
-
-    if ( argc == 2 ) {
-
-        TTSRequest request;
-        request.text = argv[1];
-        request.voice_name = "anthony";
-        request.max_new_tokens = 1024;
-        fmt::print("\n\n default voice \n\n");
-        engine->synthesize( request, progress);
-        miniaudio_impl::play();
-    } else if ( argc == 3 ) {
-
-        TTSRequest request;
-        request.text = argv[1];
-        request.voice_name = argv[2];
-        request.max_new_tokens = 1024;
-        fmt::print("\n\n try using {} as reference voice.\n\n", argv[2]);
-        engine->synthesize( request, progress);
-        miniaudio_impl::play();
-    } else if ( argc == 4 ) {
-
-        engine->registers(argv[1], argv[2], argv[3]);
-        fmt::print("\n\n voice registration done. \n\n");
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+    GLFWwindow*main_window = glfwCreateWindow(1200, 800, "audio8-tts-engine", NULL, NULL);
+    if (main_window == NULL) {
+        glfwTerminate();
+        return GL_FALSE;
     }
 
-    engine.reset();
+    glfwMakeContextCurrent(main_window);
+    glfwSwapInterval(1);
+    if (glewInit() != GLEW_OK) {
+        glfwTerminate();
+        return GL_FALSE;
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    int width, height; 
+    glfwGetWindowSize(main_window, &width, &height);
+    glViewport(0, 0, width, height);
 
-    // press enter to exit
-    fmt::print("\n\n Press Enter to exit...\n");
-    std::cin.get();
-    miniaudio_impl::stop();
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / 
+    auto cjk = io.Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf");
+    ImGuiTheme::ApplyTweakedTheme(ImGuiTheme::ImGuiTheme_Darcula);
+    auto english = io.Fonts->AddFontFromFileTTF("fonts/Cousine-Regular.ttf");
+    float xscale, yscale;
 
+    glfwGetWindowContentScale((GLFWwindow *) main_window, &xscale, &yscale);
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.FontScaleDpi = std::max(xscale, yscale);
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+    style.Colors[ImGuiCol_TextSelectedBg] = ImVec4(1.0f, 0.0f, 0.0f, 0.5f);
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForOpenGL(main_window, true);
+    ImGui_ImplOpenGL3_Init(glsl_version);
+
+
+
+    std::string txt = "大家好，我是ansony。";
+    bool is_loading = true;
+    bool is_running = false;
+    bool open_demo = true;
+
+    std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>();
+    if( !engine->initialize() ) return -1;
+    
+    std::future<void> engine_status = std::async(std::launch::async,[&](){
+        engine->preload_model();
+        is_loading = false;
+    });
+
+    std::future<void> synthesize_status = {};
+
+    // Main loop
+    while ( glfwWindowShouldClose(main_window) == GL_FALSE )
+    {
+        // Poll for and process events
+        glfwPollEvents();
+        
+        // Start the Dear ImGui frame
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        //root window
+        imgui_parent_window();
+
+        // main window
+        {
+            imgui_scoped::Font font(english);
+            ImGui::Begin("main");
+            
+            {
+                imgui_scoped::Disabled disable(is_loading);
+                if(ImGui::Button("run")) {
+
+                    if ( !is_running && !txt.empty() ) {
+                        synthesize_status = std::async(std::launch::async, [&](){
+                            TTSRequest request;
+                            request.text = txt;
+                            request.voice_name = "anthony";
+                            request.max_new_tokens = 1024;
+                            engine->synthesize( request, [](float progress_in, float eta_in){
+                                progress = progress_in;
+                                eta = eta_in;
+                            });
+                        });
+                    }
+                }
+
+                ImGui::SameLine();
+                if ( ImGui::Button("cancel") ) {
+                    engine->cancel();
+                }
+            }
+
+            {
+                imgui_scoped::Disabled disable(is_running);
+                ImGui::SameLine();
+                if(ImGui::Button("play")) {
+                    miniaudio_impl::play();
+                }
+
+                ImGui::SameLine();
+                if(ImGui::Button("stop")) {
+                    miniaudio_impl::stop();
+                }
+            }
+
+            if ( is_loading ) {
+                ImGui::SameLine();
+                ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Loading..");
+            }
+
+            if ( synthesize_status.valid() ) {
+                is_running = true;
+                if ( eta < 0 ) {
+                    ImGui::SameLine();
+                    ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "Generating..");
+                } else {
+                    ImGui::SameLine();
+                    ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Decoding..");
+                }
+                
+                if ( std::future_status::ready == synthesize_status.wait_for(std::chrono::milliseconds(1)) ) {
+                    synthesize_status.get();
+                    synthesize_status = {};
+                    is_running = false;
+                }
+            }
+
+            // Text input
+            {
+                imgui_scoped::Font font(cjk);
+                imgui_scoped::Disabled disable(is_running);
+                ImGui::InputTextMultiline("##text to speak", &txt,
+                    ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16), 
+                    0);
+            }
+
+            ImGui::End();
+        }
+
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+        {
+            GLFWwindow* backup_current_context = glfwGetCurrentContext();
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+            glfwMakeContextCurrent(backup_current_context);
+        }
+
+        glfwSwapBuffers(main_window);
+
+    }
+    
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    glfwDestroyWindow(main_window);
+    glfwTerminate();
     return 0;
 }
+
+
+
 

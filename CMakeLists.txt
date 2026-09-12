@@ -28,11 +28,26 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if (NOT WIN32)
+  option(GLFW_BUILD_WAYLAND "Build support for Wayland" OFF)
+  option(GLFW_BUILD_X11 "Build support for X11" ON)
+  option(NFD_PORTAL "Use xdg-desktop-portal instead of GTK" ON)
+else()
+  option(GLFW_BUILD_WAYLAND "Build support for Wayland" OFF)
+  option(GLFW_BUILD_X11 "Build support for X11" OFF)
+  option(NFD_PORTAL "Use xdg-desktop-portal instead of GTK" OFF)
+endif()
+option(GLFW_BUILD_EXAMPLES "Build the GLFW example programs" OFF)
+option(GLFW_BUILD_TESTS "Build the GLFW test programs" OFF)
+option(GLFW_BUILD_DOCS "Build the GLFW documentation" OFF)
+option(GLFW_INSTALL "Generate installation target" OFF)
+option(GLFW_DOCUMENT_INTERNALS "Include internals in documentation" OFF)
+
 include(FetchContent)
 
 FetchContent_Declare(
     glew
-    URL https://github.com/nigels-com/glew/archive/refs/tags/glew-2.3.1.zip
+    URL https://github.com/nigels-com/glew/releases/download/glew-2.3.1/glew-2.3.1.tgz
 )
 FetchContent_MakeAvailable(glew)
 
@@ -44,12 +59,12 @@ FetchContent_MakeAvailable(glfw)
 
 FetchContent_Declare(
     imgui
-    URL https://github.com/ocornut/imgui/archive/refs/tags/v1.92.9b.zip
+    URL https://github.com/ocornut/imgui/archive/refs/tags/v1.92.9b-docking.zip
 )
 FetchContent_MakeAvailable(imgui)
 
 if(NOT TARGET imgui)
-    target_include_directories(glew PRIVATE ${glew_SOURCE_DIR}/include)
+    
     add_subdirectory(${glew_SOURCE_DIR}/build/cmake)
     add_library(imgui STATIC
         ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
@@ -58,11 +73,17 @@ if(NOT TARGET imgui)
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/imgui_demo.cpp
         ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/theme/imgui_theme.cpp
     )
     target_include_directories(imgui PUBLIC "${imgui_SOURCE_DIR}")
     target_include_directories(imgui PUBLIC "${imgui_SOURCE_DIR}/misc")
     target_include_directories(imgui PUBLIC "${imgui_SOURCE_DIR}/misc/cpp")
+    target_include_directories(imgui PUBLIC ${glew_SOURCE_DIR}/include)
+    target_include_directories(imgui PUBLIC ${glfw_SOURCE_DIR}/include)
+    target_include_directories(imgui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/theme)
+    target_link_libraries(imgui PUBLIC glew glfw ${OPENGL_LIBRARIES})
 endif()
 
 FetchContent_Declare(
@@ -161,7 +182,7 @@ target_link_libraries(audio8
 set(app_name audio8-tts-engine)
 
 add_executable(${app_name} main.cpp)
-target_link_libraries(${app_name} PRIVATE audio8)
+target_link_libraries(${app_name} PRIVATE audio8 imgui)
 
 if(MSVC)
     target_compile_options(${app_name} PRIVATE /utf-8)
@@ -197,12 +218,17 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${CMAKE_CURRENT_SOURCE_DIR}/models
           $<TARGET_FILE_DIR:${app_name}>/models
-)
 
-add_custom_command(
-  TARGET ${app_name}
-  POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${CMAKE_CURRENT_SOURCE_DIR}/voices
           $<TARGET_FILE_DIR:${app_name}>/voices
+
+  COMMAND ${CMAKE_COMMAND} -E copy_directory 
+          ${CMAKE_CURRENT_SOURCE_DIR}/fonts
+          $<TARGET_FILE_DIR:${app_name}>/fonts
+
+  COMMAND ${CMAKE_COMMAND} -E copy_directory 
+          ${imgui_SOURCE_DIR}/misc/fonts
+          $<TARGET_FILE_DIR:${app_name}>/fonts
 )
+
