@@ -318,4 +318,22 @@ void imgui_parent_window()
 }
 
 
+// Windows specific entry point
+#ifdef _WIN32
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#ifdef __cpp_lib_byte
+#define byte win_byte_override
+#include <windows.h>
+#undef byte
+#else
+#include <windows.h>
+#endif
+INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
+    PSTR lpCmdLine, INT nCmdShow)
+{
+    const char* argv[] = {"ChoreoGraph"};
+    return main(1, (char**)argv);
+}
+#endif
 

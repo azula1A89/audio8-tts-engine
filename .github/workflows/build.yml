@@ -15,14 +15,14 @@ jobs:
         include:
           - os: ubuntu-22.04
             artifact_name: audio8-tts-engine-linux
-            archive_cmd: tar -czvf audio8-tts-engine-linux.tar.gz -C build audio8-tts-engine libonnxruntime.so libGLEW.so.2.3 voices/ models/
+            archive_cmd: tar -czvf audio8-tts-engine-linux.tar.gz -C build audio8-tts-engine libonnxruntime.so libGLEW.so.2.3 imgui.ini voices/ models/ fonts/
             output_file: audio8-tts-engine-linux.tar.gz
 
           - os: windows-2022
             artifact_name: audio8-tts-engine-windows
             archive_cmd: |
               cd build/Release/
-              Compress-Archive -Path audio8-tts-engine.exe, onnxruntime.dll, glew32.dll, models/, voices/  -DestinationPath ../../audio8-tts-engine-windows.zip
+              Compress-Archive -Path audio8-tts-engine.exe, onnxruntime.dll, glew32.dll, imgui.ini, models/, voices/, fonts  -DestinationPath ../../audio8-tts-engine-windows.zip
             output_file: audio8-tts-engine-windows.zip
 
     steps:
