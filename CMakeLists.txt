@@ -218,7 +218,11 @@ target_link_libraries(audio8
         tokenizers_cpp
 )
 
-set(app_name audio8-tts-engine)
+set(cli_name audio8-tts-cli)
+set(app_name audio8-tts-gui)
+
+add_executable(${cli_name} cli.cpp)
+target_link_libraries(${cli_name} PRIVATE audio8)
 
 if (WIN32)
   add_executable(${app_name} WIN32 main.cpp)
