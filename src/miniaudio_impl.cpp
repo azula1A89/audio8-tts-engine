@@ -37,7 +37,7 @@ public:
     };
 
     LoopPlayer(ma_uint32 sample_rate, float duration_in_seconds = 0.2f)
-        : sample_rate_(sample_rate)
+        : initialized_(false), sample_rate_(sample_rate)
     {
         beep_frames_total_ = (ma_uint64)(duration_in_seconds * sample_rate_);
         beep_frames_remaining_ = 0;
@@ -61,13 +61,16 @@ public:
         }
 
         ma_device_start(&device_);
+        initialized_ = true;
     }
 
-    void stop() { ma_device_stop(&device_); }
+    void stop() { if( initialized_ ) ma_device_stop(&device_); }
 
     virtual ~LoopPlayer() {
-        ma_device_uninit(&device_);
-        ma_decoder_uninit(&decoder_);
+        if ( initialized_ ) {
+            ma_device_uninit(&device_);
+            ma_decoder_uninit(&decoder_);
+        }
     }
 
 private:
@@ -131,6 +134,7 @@ private:
         }
     }
 
+    bool initialized_;
     ma_uint32 sample_rate_;
     ma_decoder decoder_;
     ma_device device_;
