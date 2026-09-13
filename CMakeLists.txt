@@ -183,7 +183,7 @@ set_target_properties(onnxruntime_imported PROPERTIES
 FetchContent_Declare(
     tokenizers_cpp
     GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
-    GIT_TAG        main
+    GIT_TAG        c586c52f93f7b060753bd2388eb96a105cb7374d
 )
 
 FetchContent_MakeAvailable(tokenizers_cpp)
