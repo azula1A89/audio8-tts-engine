@@ -64,6 +64,8 @@ public:
         initialized_ = true;
     }
 
+    bool initialized() { return initialized_; }
+
     void stop() { if( initialized_ ) ma_device_stop(&device_); }
 
     virtual ~LoopPlayer() {
@@ -171,10 +173,13 @@ private:
 MiniAudio::MiniAudio() : player_(nullptr), recoder_(nullptr) {};
 MiniAudio::~MiniAudio(){};
 
-void MiniAudio::play() {
+bool MiniAudio::play() {
+    bool ret = false;
     if ( !player_ ) {
         player_ = std::make_unique<LoopPlayer>(ma_standard_sample_rate_44100, 2.5f);
+        ret = player_->initialized();
     }
+    return ret;
 };
 
 void MiniAudio::stop() {

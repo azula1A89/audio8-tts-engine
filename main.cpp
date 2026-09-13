@@ -11,6 +11,8 @@
 #include "main.hpp"
 #include <nfd.hpp>
 
+using namespace std::chrono_literals;
+
 std::string choose_audio_path();
 void imgui_parent_window();
 float progress = 0.0f;
@@ -55,7 +57,7 @@ int main(int argc, char** argv)
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / 
     
-    ImGuiTheme::ApplyTweakedTheme(ImGuiTheme::ImGuiTheme_Darcula);
+    ImGuiTheme::ApplyTweakedTheme(ImGuiTheme::ImGuiTheme_MicrosoftStyle);
 
     auto cjk = io.Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf");
     auto english = io.Fonts->AddFontFromFileTTF("fonts/Cousine-Regular.ttf");
@@ -125,16 +127,18 @@ int main(int argc, char** argv)
                 imgui_scoped::Disabled disable(is_loading);
                 if (ImGui::BeginMenuBar()) {
 
-                    // select voice profile
-                    if (ImGui::BeginMenu("voices")) {
+                    {   // select voice profile
+                        imgui_scoped::Disabled disable(is_running);
+                        if (ImGui::BeginMenu("voices")) {
 
-                        for (const auto& voice : voices ) {
-                            if ( ImGui::MenuItem( voice.c_str() ) ) {
-                                request.voice_name = voice;
+                            for (const auto& voice : voices ) {
+                                if ( ImGui::MenuItem( voice.c_str(), NULL, request.voice_name == voice) ) {
+                                    request.voice_name = voice;
+                                }
                             }
-                        }
 
-                        ImGui::EndMenu();
+                            ImGui::EndMenu();
+                        }
                     }
 
                     // generate speech
@@ -160,7 +164,16 @@ int main(int argc, char** argv)
                     {
                         imgui_scoped::Disabled disable(is_running);
                         if ( ImGui::MenuItem("play") ) {
-                            miniaudio_impl::play();
+                            if( !miniaudio_impl::play() ) {
+                                miniaudio_impl::stop();
+                                ImGui::OpenPopup("my_play_popup");
+                            }
+                        }
+
+                        imgui_scoped::StyleVar popup_rounding(ImGuiStyleVar_PopupRounding, 6.0f);
+                        if (ImGui::BeginPopup("my_play_popup")) {
+                            ImGui::TextColored(ImColor(200,0,0,255), "play failed. check output.WAV");
+                            ImGui::EndPopup();
                         }
 
                         if ( ImGui::MenuItem("stop") ) {

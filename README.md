@@ -11,8 +11,8 @@ This project focuses on running the Audio8-TTS inference pipeline natively in C+
 
 Pre-built binaries are available on the releases page: 
 
-- [Windows x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.1/audio8-tts-engine-windows.zip)
-- [Linux x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.1/audio8-tts-engine-linux.tar.gz)
+- [Windows x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.3/audio8-tts-engine-windows.zip)
+- [Linux x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.3/audio8-tts-engine-linux.tar.gz)
 
 
 > **Project status:** Experimental / early-stage open-source implementation.  
@@ -223,7 +223,8 @@ cmake --build build --config Release
 The generated executable is:
 
 ```text
-audio8-tts-engine
+audio8-tts-cli
+audio8-tts-gui
 ```
 
 After building, CMake automatically copies the `models/` and `voices/` directories next to the executable.
@@ -444,7 +445,10 @@ Please refer to the upstream Audio8-TTS project and model repository for model d
 ## Third-party software
 
 This project uses the following open-source components:
-
+- [nativefiledialog](https://github.com/btzy/nativefiledialog-extended)
+- [glew](https://github.com/nigels-com/glew)
+- [glfw](https://github.com/glfw/glfw)
+- [imgui](https://github.com/ocornut/imgui)
 - [fmt](https://github.com/fmtlib/fmt)
 - [nlohmann/json](https://github.com/nlohmann/json)
 - [miniaudio](https://github.com/mackron/miniaudio)
@@ -464,6 +468,10 @@ Thanks to the authors and maintainers of:
 - Audio8-TTS
 - ONNX Runtime
 - tokenizers-cpp
+- nativefiledialog
+- glew
+- glfw
+- imgui
 - fmt
 - nlohmann/json
 - miniaudio

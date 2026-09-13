@@ -31,7 +31,7 @@ SOFTWARE.
 #include <array>
 
 namespace miniaudio_impl {
-    void play();
+    bool play();
     void stop();
     std::vector<float> load_audio( const std::string& path );
     void wav_write(const float *buff, uint64_t count);

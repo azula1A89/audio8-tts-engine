@@ -8,8 +8,8 @@
 
 **预编译版本可在 Releases 页面获取：**
 
-- [Windows x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.1/audio8-tts-engine-windows.zip)
-- [Linux x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.1/audio8-tts-engine-linux.tar.gz)
+- [Windows x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.3/audio8-tts-engine-windows.zip)
+- [Linux x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.3/audio8-tts-engine-linux.tar.gz)
 
 > **项目状态：** 实验性 / 早期阶段的开源实现  
 > 当前推理流程已经可以正常工作，但性能、音频质量、平台兼容性以及 API 稳定性仍有进一步改进空间。
@@ -224,13 +224,15 @@ cmake --build build --config Release
 编译完成后生成：
 
 ```text
-audio8-tts-engine
+audio8-tts-cli
+audio8-tts-gui
 ```
 
 Windows 下对应：
 
 ```text
-audio8-tts-engine.exe
+audio8-tts-cli.exe
+audio8-tts-gui.exe
 ```
 
 构建完成后，CMake 会自动将 `models/` 和 `voices/` 目录复制到可执行文件所在目录。
@@ -470,7 +472,10 @@ Fast AR 同样拥有独立的 KV Cache。
 ## 第三方软件
 
 本项目使用以下开源项目：
-
+- [nativefiledialog](https://github.com/btzy/nativefiledialog-extended)
+- [glew](https://github.com/nigels-com/glew)
+- [glfw](https://github.com/glfw/glfw)
+- [imgui](https://github.com/ocornut/imgui)
 - [fmt](https://github.com/fmtlib/fmt)
 - [nlohmann/json](https://github.com/nlohmann/json)
 - [miniaudio](https://github.com/mackron/miniaudio)
@@ -494,6 +499,10 @@ Fast AR 同样拥有独立的 KV Cache。
 - Audio8-TTS
 - ONNX Runtime
 - tokenizers-cpp
+- nativefiledialog
+- glew
+- glfw
+- imgui
 - fmt
 - nlohmann/json
 - miniaudio

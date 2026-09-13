@@ -41,7 +41,7 @@ using CodecFrame = std::array<int64_t, audio8::NUM_CODEBOOKS>;
 
 namespace miniaudio_impl {
     MiniAudio miniaudio;
-    void play() { miniaudio.play(); }
+    bool play() { return miniaudio.play(); }
     void stop() { miniaudio.stop(); }
     std::vector<float> load_audio( const std::string& path ) { return  miniaudio.load_audio(path); };
     void wav_write(const float *buff, uint64_t count) { miniaudio.wav_write(buff, count); };
