@@ -8,6 +8,7 @@ using namespace std::literals;
 void progress(float progress, float eta) {
     fmt::print( fmt::emphasis::bold | fg(fmt::color::pale_green), 
     "\r progress: {:.1f}%", progress * 100);
+    fflush(stdout);
 };
 
 int main(int argc, char** argv) {

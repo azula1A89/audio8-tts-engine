@@ -331,8 +331,9 @@ request.max_new_tokens = 1024;
 
 engine.synthesize(
     request,
-    [](float progress) {
+    [](float progress, float decode_eta) {
         // progress: 0.0 ~ 1.0
+        // decode_eta: how long decoding stage will takes.
     }
 );
 ```

@@ -243,9 +243,9 @@ else()
 endif()
 
 if(MSVC)
-    target_compile_options(${app_name} PRIVATE /utf-8)
+    target_compile_options(${cli_name} PRIVATE /utf-8)
 
-    set_target_properties(${app_name} PROPERTIES
+    set_target_properties(${cli_name} PROPERTIES
         VS_GLOBAL_EnableUnitySupport OFF
     )
     
@@ -261,7 +261,7 @@ if(MSVC)
         "</assembly>\n"
     )
     
-    target_sources(${app_name} PRIVATE "${MANIFEST_FILE}")
+    target_sources(${cli_name} PRIVATE "${MANIFEST_FILE}")
 endif()
 
 add_custom_command(TARGET ${app_name} POST_BUILD
