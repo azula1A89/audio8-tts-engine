@@ -96,6 +96,20 @@ namespace imgui_scoped {
         bool m_Active = false;
     };
 
+    class FontSize : private NonCopyable {
+    public:
+        explicit FontSize(float size) : m_Active(size > 0) {
+            if (m_Active) ImGui::PushFont(NULL, size);
+        }
+
+        ~FontSize() {
+            if (m_Active) ImGui::PopFont();
+        }
+
+    private:
+        bool m_Active = false;
+    };
+
     /// SetNextItemWidth / Push/PopItemWidth
     class ItemWidth : private NonCopyable {
     public:
