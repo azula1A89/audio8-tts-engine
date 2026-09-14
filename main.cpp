@@ -61,17 +61,6 @@ int main(int argc, char** argv)
 
     glfwMakeContextCurrent(main_window);
     glfwSwapInterval(1);
-    if (glewInit() != GLEW_OK) {
-        glfwTerminate();
-        return GL_FALSE;
-    }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    int width, height; 
-    glfwGetWindowSize(main_window, &width, &height);
-    glViewport(0, 0, width, height);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -98,7 +87,6 @@ int main(int argc, char** argv)
         style.WindowRounding = 0.0f;
         style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     }
-    style.Colors[ImGuiCol_TextSelectedBg] = ImVec4(1.0f, 0.0f, 0.0f, 0.5f);
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(main_window, true);
