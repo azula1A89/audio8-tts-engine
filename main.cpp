@@ -53,7 +53,7 @@ int main(int argc, char** argv)
     
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    GLFWwindow*main_window = glfwCreateWindow(1200, 466, "audio8-tts-engine", NULL, NULL);
+    GLFWwindow*main_window = glfwCreateWindow(900, 300, "audio8-tts-engine", NULL, NULL);
     if (main_window == NULL) {
         glfwTerminate();
         return GL_FALSE;
@@ -71,7 +71,7 @@ int main(int argc, char** argv)
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / 
     
-    ImGuiTheme::ImGuiTheme_ theme = ImGuiTheme::ImGuiTheme_MicrosoftStyle;
+    ImGuiTheme::ImGuiTheme_ theme = ImGuiTheme::ImGuiTheme_ImGuiColorsClassic;
     ImGuiTheme::ApplyTweakedTheme(theme);
 
     auto cjk = io.Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf");
