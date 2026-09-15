@@ -43,6 +43,7 @@ option(GLFW_BUILD_DOCS "Build the GLFW documentation" OFF)
 option(GLFW_INSTALL "Generate installation target" OFF)
 option(GLFW_DOCUMENT_INTERNALS "Include internals in documentation" OFF)
 set(BUILD_UTILS OFF CACHE BOOL "" FORCE)
+option(ONNXRUNTIME_CUDA "Using ONNXRUNTIME with CUDA Enabled" OFF)
 
 # Set RPATH for Linux to enable running without installation
 if (UNIX AND NOT APPLE)
@@ -154,6 +155,17 @@ if(WIN32)
     elseif ( CMAKE_BUILD_TYPE STREQUAL "Release")
         set(GLEW_DLL_PATH ${CMAKE_CURRENT_BINARY_DIR}/bin/Release/glew32.dll)
     endif()
+	
+	if(ONNXRUNTIME_CUDA)
+		set(ONNXURL https://github.com/microsoft/onnxruntime/releases/download/v1.29.0/onnxruntime-win-x64-gpu_cuda13-1.29.0.zip)
+		set(ONNXHASH SHA256=0d2ab3feb9ed0ae68ccbbf2013ac87ad58a3b31bc8b28c5854f2ccacecbd8d90)
+		set(ONNX_DLL_NAME "onnxruntime.dll")
+		set(ONNX_DLL_NAME_CUDA "onnxruntime_providers_cuda.dll")
+		set(ONNX_DLL_NAME_SHARED "onnxruntime_providers_shared.dll")		
+		set(ONNX_LIB_NAME "onnxruntime.lib")
+		set(ONNX_LIB_NAME_CUDA "onnxruntime_providers_cuda.lib")
+		set(ONNX_LIB_NAME_SHARED "onnxruntime_providers_shared.lib")
+	endif()
     
 elseif(APPLE)
     set(ONNXURL https://github.com/microsoft/onnxruntime/releases/download/v1.29.0/onnxruntime-osx-arm64-1.29.0.tgz)
@@ -183,7 +195,7 @@ set_target_properties(onnxruntime_imported PROPERTIES
 FetchContent_Declare(
     tokenizers_cpp
     GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
-    GIT_TAG        c586c52f93f7b060753bd2388eb96a105cb7374d
+    GIT_TAG        main
 )
 
 FetchContent_MakeAvailable(tokenizers_cpp)
@@ -199,6 +211,12 @@ else()
     )
 endif()
 
+if(ONNXRUNTIME_CUDA)
+	find_package(CUDAToolkit REQUIRED)
+	message(STATUS "Found CUDA version: ${CUDAToolkit_VERSION}")
+	message(STATUS "CUDA Include Dirs: ${CUDAToolkit_INCLUDE_DIRS}")
+endif()
+
 find_package(OpenGL REQUIRED)
 
 file(GLOB_RECURSE _HDRS "include/*.hpp")
@@ -206,7 +224,9 @@ file(GLOB_RECURSE _SRCS "src/*.cpp" "src/*.hpp")
 
 add_library(audio8 ${_SRCS} ${_HDRS})
 
-target_include_directories(audio8 PUBLIC include)
+target_include_directories(audio8 PUBLIC
+	${CMAKE_CURRENT_SOURCE_DIR}/include 
+)
 
 target_link_libraries(audio8 
     PUBLIC 
@@ -217,6 +237,10 @@ target_link_libraries(audio8
         onnxruntime_imported
         tokenizers_cpp
 )
+
+if(ONNXRUNTIME_CUDA)
+	target_link_libraries(audio8 PRIVATE CUDA::cudart)
+endif()
 
 set(cli_name audio8-tts-cli)
 set(app_name audio8-tts-gui)
@@ -264,15 +288,35 @@ if(MSVC)
     target_sources(${cli_name} PRIVATE "${MANIFEST_FILE}")
 endif()
 
-add_custom_command(TARGET ${app_name} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${onnxruntime_SOURCE_DIR}/lib/${ONNX_DLL_NAME}"
-    $<TARGET_FILE_DIR:${app_name}>
+if(ONNXRUNTIME_CUDA)
+	add_custom_command(TARGET ${app_name} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${onnxruntime_SOURCE_DIR}/lib/${ONNX_DLL_NAME}"
+		$<TARGET_FILE_DIR:${app_name}>
+		
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${onnxruntime_SOURCE_DIR}/lib/${ONNX_DLL_NAME_CUDA}"
+		$<TARGET_FILE_DIR:${app_name}>
+		
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${onnxruntime_SOURCE_DIR}/lib/${ONNX_DLL_NAME_SHARED}"
+		$<TARGET_FILE_DIR:${app_name}>
 
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${GLEW_DLL_PATH}"
-    $<TARGET_FILE_DIR:${app_name}>
-)
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${GLEW_DLL_PATH}"
+		$<TARGET_FILE_DIR:${app_name}>
+	)
+else()
+	add_custom_command(TARGET ${app_name} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${onnxruntime_SOURCE_DIR}/lib/${ONNX_DLL_NAME}"
+		$<TARGET_FILE_DIR:${app_name}>
+		
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${GLEW_DLL_PATH}"
+		$<TARGET_FILE_DIR:${app_name}>
+	)
+endif()
 
 add_custom_command(
   TARGET ${app_name}
