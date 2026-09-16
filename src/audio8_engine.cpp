@@ -27,11 +27,12 @@ SOFTWARE.
 #include <atomic>
 #include <text_processor.hpp>
 #include <prompt_builder.hpp>
-#include <slow_ar_generator.hpp>
-#include <fast_ar_generator.hpp>
+//#include <slow_ar_generator.hpp>
+//#include <fast_ar_generator.hpp>
+#include <full_ar_generator.hpp>
 #include <codec_decoder.hpp>
 #include <voice_manager.hpp>
-#include <sampler.hpp>
+//#include <sampler.hpp>
 #include <array>
 #include <onnxruntime_cxx_api.h>
 #include <fmt/color.h>
@@ -55,11 +56,8 @@ public:
         env_(nullptr),
         voice_manager_(nullptr),
         prompt_builder_(nullptr),
-        slow_ar_(nullptr),
-        fast_ar_(nullptr),
+        full_ar_(nullptr),
         codec_decoder_(nullptr),
-        sampler_(nullptr),
-        cancel_requested_(false),
         initialized_(false) {};
 
     ~Impl() {};
@@ -75,54 +73,38 @@ public:
             "[{}] is not a vaild model path.\n", paths_.root.string());
         }
 
-        env_ = std::make_unique<Ort::Env>( ORT_LOGGING_LEVEL_ERROR, "Audio8Engine");
-        initialized_ &= (env_ != nullptr);
+        env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_ERROR, "Audio8Engine");
 
         voice_manager_ = std::make_unique<VoiceManager>(
             env_.get(),
             paths_,
             cfg
         );
-        initialized_ &= (voice_manager_ != nullptr);
 
         prompt_builder_ = std::make_unique<PromptBuilder>(
             paths_.tokenizer, 
             audio8::SEMATIC_BEGIN_ID, 
             audio8::NUM_CODEBOOKS
         );
-        initialized_ &= (prompt_builder_ != nullptr);
 
-        slow_ar_ = std::make_unique<SlowARGenerator>(
+        full_ar_ = std::make_unique<FullARGenerator>(
             env_.get(),
             paths_,
             cfg
         );
-        initialized_ &= (slow_ar_ != nullptr);
-        
-        fast_ar_ = std::make_unique<FastARGenerator>(
-            env_.get(),
-            paths_,
-            cfg
-        );
-        initialized_ &= (fast_ar_ != nullptr);
-
+       
         codec_decoder_ = std::make_unique<CodecDecoder>(
             env_.get(),
             paths_,
             cfg
         );
-        initialized_ &= (codec_decoder_ != nullptr);
-
-        sampler_ = std::make_unique<Sampler>(0.7, 0.9, 50);
-        initialized_ &= (sampler_ != nullptr);
 
         return initialized_;
     }
 
     void preload_model() {
         if ( initialized_ ) {
-            slow_ar_->init();
-            fast_ar_->init();
+            full_ar_->init();
             codec_decoder_->init();
         } else {
             fmt::print("Audio8Engine not initialized. \n");
@@ -131,10 +113,8 @@ public:
 
     void uninit() {
         env_.reset();
-        slow_ar_.reset();
-        fast_ar_.reset();
+        full_ar_.reset();
         codec_decoder_.reset();
-        sampler_.reset();
         prompt_builder_.reset();
         voice_manager_.reset();
         initialized_ = false;
@@ -142,7 +122,12 @@ public:
 
     void shutdown() {}
 
-    void cancel() { cancel_requested_.store(true); }
+    void cancel() {
+        if (initialized_)
+        {
+            full_ar_->cancle();
+        }
+    }
 
     std::vector<std::string> list_voices() {
         if ( voice_manager_ ) {
@@ -165,7 +150,6 @@ public:
             return;
         }
 
-        cancel_requested_.store(false);
         auto progress = [&progress_cb](float p, float eta = -1.0f){ 
             if (progress_cb) progress_cb(p, eta);
         };
@@ -182,73 +166,25 @@ public:
 
         SlowARInput slow_input;
         make_initial_slow_input(profile, prompt, slow_input);
+        FullARInput full_input = { slow_input , request.max_new_tokens, prompt.prompt_len};
 
-        SlowAROutput slow_output;
-        slow_ar_->reset_kvcache();
-        slow_ar_->generate_next(slow_input, slow_output);
-        // fmt::print("initial step done.\n\n");
-
-        std::list<int> previous;
-        code_frame codebooks;
         std::vector<code_frame> frames;
+        full_ar_->generate_frame( full_input, [&](const code_frame& f, const int& step, const bool finished, const bool max_token_reached) {
+            if(codebook_cb) codebook_cb(f.data(), f.size());
+            frames.push_back(f);
 
-        for (int step = 0; step < request.max_new_tokens; step++) {
-            if ( cancel_requested_.load() ) {
-                return;
-            }
-
-            int semantic = sampler_->sample_semantic(slow_output.logits.data, previous);
-            if ( semantic == audio8::IM_END_ID ) {
-
-                // fmt::print("\n\n STOP SIGN FOUND. \n\n");
+            progress(0.05f + 0.85f * std::min(0.99f, (float)step / (float)estimated_total_frames));
+            if ( finished || max_token_reached ) {
                 size_t total_frames = frames.size();
                 float eta = 1e-3f * codec_decoder_->estimate_decode_time_ms(total_frames);
-                
-                fmt::print("\n decoder ETA {:.1f}sec. \n", eta );
+
+                fmt::print("\n decoder ETA {:.1f}sec. \n", eta);
 
                 progress(0.9f, eta);
                 codec_decoder_->decode_audio_batch(frames);
                 progress(1.0f, eta);
-                return;
             }
-            previous.push_back(semantic);
-            if( previous.size() > 10 ) previous.pop_front();
-
-            // fast step 0
-            FastARInput fast_input(slow_output.slow_hidden, 0, true, 0);
-            FastAROutput fast_output;
-            fast_ar_->reset_kvcache();
-            fast_ar_->generate_next(fast_input, fast_output);
-
-            int token = std::min(std::max(semantic - audio8::SEMATIC_BEGIN_ID, 0), audio8::CODEBOOK_SIZE - 1);
-
-            codebooks[0] = token;
-
-            //fast step 1-9
-            for (int fast_pos = 1; fast_pos < audio8::NUM_CODEBOOKS; fast_pos++) {
-                FastARInput fast_input(slow_output.slow_hidden, token, false, fast_pos);
-                
-                fast_ar_->generate_next(fast_input, fast_output);
-
-                token = sampler_->sample(fast_output.logits.data);
-                codebooks[fast_pos] = token;
-            }
-            frames.push_back(codebooks);
-
-            if ( codebook_cb ) {
-                codebook_cb(codebooks.data(), audio8::NUM_CODEBOOKS);
-            }
-
-            update_slow_input(slow_input, semantic, prompt.prompt_len, step, codebooks);
-            slow_ar_->generate_next(slow_input, slow_output);
-            // fmt::print("step {} done.\n\n", step);
-            progress(0.05f + 0.85f * std::min(0.99f, (float)step / (float)estimated_total_frames));
-        }
-
-        // fmt::print("\n\n MAX TOKEN REACHED. \n\n");
-        progress(0.9f);
-        codec_decoder_->decode_audio_batch(frames);
-        progress(1.0f);
+        });
     }
 
 private:
@@ -298,11 +234,8 @@ private:
     std::unique_ptr<Ort::Env> env_;
     std::unique_ptr<VoiceManager> voice_manager_;
     std::unique_ptr<PromptBuilder> prompt_builder_;
-    std::unique_ptr<SlowARGenerator> slow_ar_;
-    std::unique_ptr<FastARGenerator> fast_ar_;
+    std::unique_ptr<FullARGenerator> full_ar_;
     std::unique_ptr<CodecDecoder> codec_decoder_;
-    std::unique_ptr<Sampler> sampler_;
-    std::atomic_bool cancel_requested_;
     bool initialized_;
 };
 

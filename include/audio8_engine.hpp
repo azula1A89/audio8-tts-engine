@@ -122,6 +122,11 @@ struct FastAROutput {
     Tensor<float> logits;
 };
 
+struct FullARInput {
+    struct SlowARInput slow_ar;
+    int max_new_tokens;
+    int prompt_len;
+};
 
 struct Audio8ModelPaths
 {
