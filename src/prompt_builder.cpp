@@ -33,16 +33,40 @@ SOFTWARE.
 #include <fmt/color.h>
 
 class PromptBuilder::Impl {
+
+private:
+    std::filesystem::path tokenizer_dir_;
+    int semantic_begin_id_;
+    int num_codebooks_;
+
+    std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
+    std::unique_ptr<TextProcessor> text_processor_;
+    bool initialized_;
+    
 public:
     Impl(const std::filesystem::path& tokenizer_dir, int semantic_begin_id, int num_codebooks) :
     tokenizer_dir_(tokenizer_dir),
     semantic_begin_id_(semantic_begin_id), 
     num_codebooks_(num_codebooks),
     tokenizer_(nullptr),
-    text_processor_{ std::make_unique<TextProcessor>() }
+    text_processor_{ std::make_unique<TextProcessor>() },
+    initialized_(false)
     {}
 
+    bool initialize() {
+        if ( !initialized_ ) {
+            auto blob = load_bytes_from_file(tokenizer_dir_.string());
+            tokenizer_ = std::move(tokenizers::Tokenizer::FromBlobJSON(blob));
+            initialized_ = true;
+        }
+        return initialized_;
+    }
+
     Prompt build( const std::string& target_text, const std::string& transcript, const std::vector<int64_t>& codes) {
+        if ( !initialized_ ) {
+            initialized_ = initialize();
+            if ( !initialized_ ) return {};
+        }
 
         Prompt prompt;
         
@@ -62,7 +86,7 @@ public:
 
         std::vector<uint32_t> prefix_toks;
         for (auto part : prefix_parts) {
-            auto toks = encode_text(part);
+            auto toks = tokenizer_->Encode(part);
             for (auto& t : toks) {
                 prefix_toks.push_back(t);
             }
@@ -70,7 +94,7 @@ public:
 
         std::vector<uint32_t> suffix_toks;
         for (auto part : suffix_parts) {
-            auto toks = encode_text(part);
+            auto toks = tokenizer_->Encode(part);
             for (auto& t : toks) {
                 suffix_toks.push_back(t);
             }
@@ -167,22 +191,6 @@ private:
         fs.read(data.data(), size);
         return data;
     }
-
-    std::vector<int32_t> encode_text( const std::string& text ) {
-        if ( !tokenizer_ ) {
-            auto blob = load_bytes_from_file(tokenizer_dir_.string());
-            tokenizer_ = std::move(tokenizers::Tokenizer::FromBlobJSON(blob));
-        }
-        return tokenizer_->Encode( text);
-    }
-
-private:
-    std::filesystem::path tokenizer_dir_;
-    int semantic_begin_id_;
-    int num_codebooks_;
-
-    std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
-    std::unique_ptr<TextProcessor> text_processor_;
 };
 
 PromptBuilder::PromptBuilder(const std::filesystem::path& tokenizer_dir, int semantic_begin_id, int num_codebooks) : pImpl{ std::make_unique<Impl>( tokenizer_dir, semantic_begin_id, num_codebooks ) } {}
@@ -196,3 +204,6 @@ Prompt PromptBuilder::build( const std::string& target_text, const std::string& 
     return pImpl->build(target_text, transcript, codes);
 }
 
+bool PromptBuilder::init() {
+    return pImpl->initialize();
+}

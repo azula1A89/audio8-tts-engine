@@ -56,4 +56,6 @@ public:
     PromptBuilder& operator=(const PromptBuilder&) = delete;
     Prompt build( const std::string& target_text, const std::string& transcript, const std::filesystem::path code_file);
     Prompt build( const std::string& target_text, const std::string& transcript, const std::vector<int64_t>& codes);
+    
+    bool init();
 };

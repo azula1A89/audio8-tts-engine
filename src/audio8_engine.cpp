@@ -121,6 +121,7 @@ public:
 
     void preload_model() {
         if ( initialized_ ) {
+            prompt_builder_->init();
             slow_ar_->init();
             fast_ar_->init();
             codec_decoder_->init();
@@ -174,8 +175,8 @@ public:
         bool ret = voice_manager_->load_profile(request.voice_name, profile);
         if( !ret ) return;
         
-        progress(0.05f);
         Prompt prompt = prompt_builder_->build( request.text, profile.transcript, profile.codec_codes);
+        progress(0.05f);
 
         size_t char_count = prompt.suffix_len - 11;
         double estimated_total_frames = std::max(1.0, char_count * 6.0);
