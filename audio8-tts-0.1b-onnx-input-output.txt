@@ -1,0 +1,198 @@
+----------------------------------------
+Model Path: audio8-tts-0.1B/slow_ar_int8.onnx
+----------------------------------------
+=== Inputs (6) ===
+input_names
+"codes", "position", "cache_keys", "cache_values", "conv_states", "ssm_states", 
+ Index 0:
+  - Name  : codes
+  - Type  : INT64
+  - Shape : [1, 11, 1]
+ Index 1:
+  - Name  : position
+  - Type  : INT64
+  - Shape : [1]
+ Index 2:
+  - Name  : cache_keys
+  - Type  : FLOAT32
+  - Shape : [24, 1, 2, 2048, 64]
+ Index 3:
+  - Name  : cache_values
+  - Type  : FLOAT32
+  - Shape : [24, 1, 2, 2048, 64]
+ Index 4:
+  - Name  : conv_states
+  - Type  : FLOAT32
+  - Shape : [24, 1, 896, 4]
+ Index 5:
+  - Name  : ssm_states
+  - Type  : FLOAT32
+  - Shape : [24, 1, 24, 32, 64]
+
+=== Outputs (6) ===
+input_names
+"logits", "hidden", "key_delta", "value_delta", "next_conv_states", "next_ssm_states", 
+ Index 0:
+  - Name  : logits
+  - Type  : FLOAT32
+  - Shape : [1, 1, 4097]
+ Index 1:
+  - Name  : hidden
+  - Type  : FLOAT32
+  - Shape : [1, 1, 512]
+ Index 2:
+  - Name  : key_delta
+  - Type  : FLOAT32
+  - Shape : [24, 1, 2, 64]
+ Index 3:
+  - Name  : value_delta
+  - Type  : FLOAT32
+  - Shape : [24, 1, 2, 64]
+ Index 4:
+  - Name  : next_conv_states
+  - Type  : FLOAT32
+  - Shape : [24, 1, 896, 4]
+ Index 5:
+  - Name  : next_ssm_states
+  - Type  : FLOAT32
+  - Shape : [24, 1, 24, 32, 64]
+----------------------------------------
+
+
+----------------------------------------
+Model Path: audio8-tts-0.1B/fast_ar_int8.onnx
+----------------------------------------
+=== Inputs (12) ===
+input_names
+"slow_hidden", "token_id", "use_slow_hidden", "input_pos", "cache_key_0", "cache_value_0", "cache_key_1", "cache_value_1", "cache_key_2", "cache_value_2", "cache_key_3", "cache_value_3", 
+ Index 0:
+  - Name  : slow_hidden
+  - Type  : FLOAT32
+  - Shape : [1, 1, 512]
+ Index 1:
+  - Name  : token_id
+  - Type  : INT64
+  - Shape : [1, 1]
+ Index 2:
+  - Name  : use_slow_hidden
+  - Type  : BOOL
+  - Shape : [1]
+ Index 3:
+  - Name  : input_pos
+  - Type  : INT64
+  - Shape : [1]
+ Index 4:
+  - Name  : cache_key_0
+  - Type  : FLOAT32
+  - Shape : [1, 2, 10, 64]
+ Index 5:
+  - Name  : cache_value_0
+  - Type  : FLOAT32
+  - Shape : [1, 2, 10, 64]
+ Index 6:
+  - Name  : cache_key_1
+  - Type  : FLOAT32
+  - Shape : [1, 2, 10, 64]
+ Index 7:
+  - Name  : cache_value_1
+  - Type  : FLOAT32
+  - Shape : [1, 2, 10, 64]
+ Index 8:
+  - Name  : cache_key_2
+  - Type  : FLOAT32
+  - Shape : [1, 2, 10, 64]
+ Index 9:
+  - Name  : cache_value_2
+  - Type  : FLOAT32
+  - Shape : [1, 2, 10, 64]
+ Index 10:
+  - Name  : cache_key_3
+  - Type  : FLOAT32
+  - Shape : [1, 2, 10, 64]
+ Index 11:
+  - Name  : cache_value_3
+  - Type  : FLOAT32
+  - Shape : [1, 2, 10, 64]
+
+=== Outputs (9) ===
+input_names
+"logits", "key_delta_0", "value_delta_0", "key_delta_1", "value_delta_1", "key_delta_2", "value_delta_2", "key_delta_3", "value_delta_3", 
+ Index 0:
+  - Name  : logits
+  - Type  : FLOAT32
+  - Shape : [1, 1, 4096]
+ Index 1:
+  - Name  : key_delta_0
+  - Type  : FLOAT32
+  - Shape : [1, 2, 1, 64]
+ Index 2:
+  - Name  : value_delta_0
+  - Type  : FLOAT32
+  - Shape : [1, 2, 1, 64]
+ Index 3:
+  - Name  : key_delta_1
+  - Type  : FLOAT32
+  - Shape : [1, 2, 1, 64]
+ Index 4:
+  - Name  : value_delta_1
+  - Type  : FLOAT32
+  - Shape : [1, 2, 1, 64]
+ Index 5:
+  - Name  : key_delta_2
+  - Type  : FLOAT32
+  - Shape : [1, 2, 1, 64]
+ Index 6:
+  - Name  : value_delta_2
+  - Type  : FLOAT32
+  - Shape : [1, 2, 1, 64]
+ Index 7:
+  - Name  : key_delta_3
+  - Type  : FLOAT32
+  - Shape : [1, 2, 1, 64]
+ Index 8:
+  - Name  : value_delta_3
+  - Type  : FLOAT32
+  - Shape : [1, 2, 1, 64]
+----------------------------------------
+
+----------------------------------------
+Model Path: audio8-tts-0.1B/codec_decoder_fp16.onnx
+----------------------------------------
+=== Inputs (1) ===
+input_names
+"codes", 
+ Index 0:
+  - Name  : codes
+  - Type  : INT64
+  - Shape : [-1, 10, -1]
+
+=== Outputs (1) ===
+input_names
+"audio", 
+ Index 0:
+  - Name  : audio
+  - Type  : FLOAT32
+  - Shape : [-1, 1, -1]
+----------------------------------------
+
+
+----------------------------------------
+Model Path: audio8-tts-0.1B/registration/codec_encoder_fp16.onnx
+----------------------------------------
+=== Inputs (1) ===
+input_names
+"audio", 
+ Index 0:
+  - Name  : audio
+  - Type  : FLOAT16
+  - Shape : [-1, 1, -1]
+
+=== Outputs (1) ===
+input_names
+"codes", 
+ Index 0:
+  - Name  : codes
+  - Type  : INT64
+  - Shape : [-1, 10, -1]
+----------------------------------------
+
