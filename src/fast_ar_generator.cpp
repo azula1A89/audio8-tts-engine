@@ -34,6 +34,14 @@ static const char* output_names[] = {"logits", "key_delta_0", "value_delta_0", "
 
 class FastARGenerator::Impl
 {
+private:
+
+    Ort::Env& env_;
+    const std::filesystem::path& path_;
+    std::unique_ptr<Ort::Session> session_;
+    std::map<std::string, Tensor<float>> kv_cache_;
+    bool initialized_;
+    
 public:
 
     Impl( Ort::Env& env, const std::filesystem::path& path, const RuntimeConfig& config) :
@@ -46,14 +54,14 @@ public:
             auto ck = fmt::format("cache_key_{}", i);
             auto cv = fmt::format("cache_value_{}", i);
 
-            kv_cache_[ck] = Tensor<Ort::Float16_t>();
-            kv_cache_[cv] = Tensor<Ort::Float16_t>();
+            kv_cache_[ck] = Tensor<float>();
+            kv_cache_[cv] = Tensor<float>();
 
             kv_cache_[ck].shape = { 1, 2, 10, 64};
             kv_cache_[cv].shape = { 1, 2, 10, 64};
 
-            kv_cache_[ck].data.resize(1280UL, Ort::Float16_t());
-            kv_cache_[cv].data.resize(1280UL, Ort::Float16_t());
+            kv_cache_[ck].data.resize(1280UL, float());
+            kv_cache_[cv].data.resize(1280UL, float());
         }
      }
 
@@ -103,9 +111,9 @@ private:
         auto memory_info = Ort::MemoryInfo::CreateCpu (OrtArenaAllocator, OrtMemTypeDefault);
         
         input_values.resize(session_->GetInputCount());
-        input_values[0] = Ort::Value::CreateTensor<Ort::Float16_t>(
+        input_values[0] = Ort::Value::CreateTensor<float>(
             memory_info,
-            reinterpret_cast<Ort::Float16_t*>(input.slow_hidden.ptr()),
+            reinterpret_cast<float*>(input.slow_hidden.ptr()),
             input.slow_hidden.size(),
             input.slow_hidden.shape.data(),
             input.slow_hidden.shape.size()
@@ -140,14 +148,14 @@ private:
             int vi = (i + 2)*2 + 1;
             auto& key = kv_cache_[fmt::format("cache_key_{}", i)];
             auto& value = kv_cache_[fmt::format("cache_value_{}", i)];
-            input_values[ki] = Ort::Value::CreateTensor < Ort::Float16_t > (
+            input_values[ki] = Ort::Value::CreateTensor < float > (
                 memory_info, 
                 key.ptr(), 
                 key.size(), 
                 key.shape.data(), 
                 key.shape.size());
 
-            input_values[vi] = Ort::Value::CreateTensor < Ort::Float16_t > (
+            input_values[vi] = Ort::Value::CreateTensor < float > (
                 memory_info, 
                 value.ptr(), 
                 value.size(), 
@@ -171,8 +179,8 @@ private:
             auto& ck = kv_cache_[fmt::format("cache_key_{}", i)];
             auto& cv = kv_cache_[fmt::format("cache_value_{}", i)];
 
-            const Ort::Float16_t* k_ptr = output_values[ki].GetTensorData<Ort::Float16_t>();
-            const Ort::Float16_t* v_ptr = output_values[vi].GetTensorData<Ort::Float16_t>();
+            const float* k_ptr = output_values[ki].GetTensorData<float>();
+            const float* v_ptr = output_values[vi].GetTensorData<float>();
 
             auto kd_shape = output_values[ki].GetTensorTypeAndShapeInfo().GetShape();
             auto vd_shape = output_values[vi].GetTensorTypeAndShapeInfo().GetShape();
@@ -184,8 +192,8 @@ private:
         // fmt::print("fastar delta-shape: {} update pos: {}\n", kv_cache_["key_delta_0"].shape, position);
     }
 
-    void update_kvcache_item(Tensor<Ort::Float16_t>& data, 
-        const Ort::Float16_t* delta,
+    void update_kvcache_item(Tensor<float>& data, 
+        const float* delta,
         const std::vector<int64_t>& delta_shape,
         const int64_t& position) {
         size_t batch_size = data.shape[0];      // dim 0
@@ -217,17 +225,11 @@ private:
                                     h * delta_stride_h +
                                     0 * delta_stride_s; // seq_len维度为1，所以索引为0
                 size_t cache_idx = get_linear_index(b, h, seq_pos, 0); // seq_len维度为1，所以索引为0
-                memcpy(&data.data[cache_idx], delta + delta_idx, head_dim * sizeof(Ort::Float16_t));
+                memcpy(&data.data[cache_idx], delta + delta_idx, head_dim * sizeof(float));
             }
         }
     }
-private:
 
-    Ort::Env& env_;
-    const std::filesystem::path& path_;
-    std::unique_ptr<Ort::Session> session_;
-    std::map<std::string, Tensor<Ort::Float16_t>> kv_cache_;
-    bool initialized_;
 };
 
 

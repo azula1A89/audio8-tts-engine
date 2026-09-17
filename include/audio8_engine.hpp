@@ -39,16 +39,15 @@ namespace miniaudio_impl {
 
 namespace audio8
 {
-constexpr int NUM_LAYERS = 24;
 constexpr int NUM_FAST_LAYERS = 4;
-constexpr int SEMATIC_BEGIN_ID = 151678;
-constexpr int SEMATIC_END_ID = 155773;
-constexpr int IM_END_ID = 151645;
+constexpr int SEMATIC_BEGIN_ID = 65537;
+constexpr int SEMATIC_END_ID = 69632;
+constexpr int IM_END_ID = 4096;
 
 constexpr int NUM_CODEBOOKS = 10;
 constexpr int CODEBOOK_SIZE = 4096;
 
-constexpr int HIDDEN_SIZE = 896;
+constexpr int HIDDEN_SIZE = 512;
 
 constexpr int SAMPLE_RATE = 44100;
 constexpr int FRAME_SAMPLES = 2048;
@@ -85,10 +84,10 @@ struct CacheTensor
 };
 
 struct SlowARInput {
-    //INT64 [-1, 11, -1]
+    //INT64 [1, 11, 1]
     Tensor<int64_t> codes;
 
-    //INT64 [-1]
+    //INT64 [1]
     Tensor<int64_t> input_pos;
 };
 
@@ -97,16 +96,16 @@ struct SlowAROutput {
     Tensor<float> logits;
 
     //FLOAT16 [-1, -1, 896]
-    Tensor<int16_t> slow_hidden;//FLOAT16
+    Tensor<float> slow_hidden;//FLOAT32
 };
 
 struct FastARInput {
-    Tensor<int16_t>& slow_hidden; 
+    Tensor<float>& slow_hidden; 
     Tensor<int64_t> token_id;
-    Tensor<int8_t> use_slow_hidden;
+    Tensor<uint8_t> use_slow_hidden;
     Tensor<int64_t> input_pos;
 
-    FastARInput(Tensor<int16_t>& slow_hidden_in, int64_t token_id_in, bool use_slow_hidden_in, int64_t input_pos_in) 
+    FastARInput(Tensor<float>& slow_hidden_in, int64_t token_id_in, bool use_slow_hidden_in, int64_t input_pos_in) 
         : slow_hidden(slow_hidden_in) {
         token_id.data = {token_id_in};
         token_id.shape = {1,1};
@@ -144,8 +143,8 @@ struct Audio8ModelPaths
         root = model_dir;
         manifest = model_dir / "runtime_manifest.json";
         tokenizer = model_dir / "tokenizer" / "tokenizer.json";
-        slow_ar = model_dir / "slow_ar_int4.onnx";
-        fast_ar = model_dir / "fast_ar_int4.onnx";
+        slow_ar = model_dir / "slow_ar_int8.onnx";
+        fast_ar = model_dir / "fast_ar_int8.onnx";
         codec_decoder = model_dir / "codec_decoder_fp16.onnx";
         codec_encoder = model_dir / "registration" / "codec_encoder_fp16.onnx";
     }

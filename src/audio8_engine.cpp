@@ -49,6 +49,18 @@ namespace miniaudio_impl {
 
 class Audio8Engine::Impl
 {
+private:
+    Audio8ModelPaths paths_;
+    std::unique_ptr<Ort::Env> env_;
+    std::unique_ptr<VoiceManager> voice_manager_;
+    std::unique_ptr<PromptBuilder> prompt_builder_;
+    std::unique_ptr<SlowARGenerator> slow_ar_;
+    std::unique_ptr<FastARGenerator> fast_ar_;
+    std::unique_ptr<CodecDecoder> codec_decoder_;
+    std::unique_ptr<Sampler> sampler_;
+    std::atomic_bool cancel_requested_;
+    bool initialized_;
+
 public:
     Impl() :
         paths_(),
@@ -181,12 +193,13 @@ public:
         double estimated_total_frames = std::max(1.0, char_count * 6.0);
 
         SlowARInput slow_input;
-        make_initial_slow_input(profile, prompt, slow_input);
-
         SlowAROutput slow_output;
-        slow_ar_->reset_kvcache();
-        slow_ar_->generate_next(slow_input, slow_output);
-        // fmt::print("initial step done.\n\n");
+        
+        slow_ar_prefill_process( profile, prompt, [&](SlowARInput& in){
+            slow_ar_->generate_next(in, slow_output );
+        });
+        
+        fmt::print("slow prefill step done.\n\n");
 
         std::list<int> previous;
         code_frame codebooks;
@@ -200,7 +213,7 @@ public:
             int semantic = sampler_->sample_semantic(slow_output.logits.data, previous);
             if ( semantic == audio8::IM_END_ID ) {
 
-                // fmt::print("\n\n STOP SIGN FOUND. \n\n");
+                fmt::print("\n\n STOP SIGN FOUND. \n\n");
                 size_t total_frames = frames.size();
                 float eta = 1e-3f * codec_decoder_->estimate_decode_time_ms(total_frames);
                 
@@ -241,11 +254,11 @@ public:
 
             update_slow_input(slow_input, semantic, prompt.prompt_len, step, codebooks);
             slow_ar_->generate_next(slow_input, slow_output);
-            // fmt::print("step {} done.\n\n", step);
+            fmt::print("step {} done.\n\n", step);
             progress(0.05f + 0.85f * std::min(0.99f, (float)step / (float)estimated_total_frames));
         }
 
-        // fmt::print("\n\n MAX TOKEN REACHED. \n\n");
+        fmt::print("\n\n MAX TOKEN REACHED. \n\n");
         progress(0.9f);
         codec_decoder_->decode_audio_batch(frames);
         progress(1.0f);
@@ -254,20 +267,41 @@ public:
 private:
 
     void update_slow_input(SlowARInput& slow_input, const int& semantic, const int64_t& prompt_len, const int64_t& step, const code_frame& codebooks) {
-        if ( slow_input.input_pos.size() > 1 || slow_input.codes.size() > 11 ) {
+        if ( slow_input.input_pos.data.empty() || slow_input.codes.data.empty() ) {
             slow_input.input_pos.data.resize(1);
-            slow_input.input_pos.shape.resize(1);
+            slow_input.input_pos.shape = {1};
             slow_input.codes.data.resize(11);
-            slow_input.codes.shape.resize(3);
+            slow_input.codes.shape = {1, 11, 1};
         }
-        slow_input.input_pos.shape[0] = 1;
+
         slow_input.input_pos.data[0] = prompt_len + step;
-        slow_input.codes.shape[0] = 1;
-        slow_input.codes.shape[1] = 11;
-        slow_input.codes.shape[2] = 1;
         slow_input.codes.data[0] = semantic;
         for (int i = 0; i < audio8::NUM_CODEBOOKS; i++) {
             slow_input.codes.data[i + 1] = codebooks[i];
+        }
+    }
+
+    void slow_ar_prefill_process( const VoiceProfile& profile, const Prompt& prompt, std::function<void(SlowARInput&)> callback ) 
+    {
+        slow_ar_->reset_kvcache();
+
+        SlowARInput columns;
+        make_initial_slow_input(profile, prompt, columns);
+
+        int stride = columns.input_pos.size();
+
+        SlowARInput column;
+        column.input_pos.shape = {1};
+        column.input_pos.data.resize(1);
+        column.codes.shape = {1, 11, 1};
+        column.codes.data.resize(11);
+        for (int i = 0; i < stride; i++) {
+            column.input_pos.data[0] = columns.input_pos.data[i];
+
+            for (int x = 0; x < 11; x++) {
+                column.codes.data[x] = columns.codes.data[i + x * stride];
+            }
+            callback(column);
         }
     }
 
@@ -292,18 +326,6 @@ private:
                 profile.frames * sizeof(int64_t));
         }
     }
-
-private:
-    Audio8ModelPaths paths_;
-    std::unique_ptr<Ort::Env> env_;
-    std::unique_ptr<VoiceManager> voice_manager_;
-    std::unique_ptr<PromptBuilder> prompt_builder_;
-    std::unique_ptr<SlowARGenerator> slow_ar_;
-    std::unique_ptr<FastARGenerator> fast_ar_;
-    std::unique_ptr<CodecDecoder> codec_decoder_;
-    std::unique_ptr<Sampler> sampler_;
-    std::atomic_bool cancel_requested_;
-    bool initialized_;
 };
 
 Audio8Engine::Audio8Engine() : pImpl{ std::make_unique<Impl>() } {}
