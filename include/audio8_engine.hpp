@@ -30,6 +30,7 @@ SOFTWARE.
 #include <string>
 #include <vector>
 #include <array>
+#include <functional>
 
 template <typename T, typename... Args>
 std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
@@ -182,8 +183,9 @@ struct TTSRequest
     int max_new_tokens = 256;
 };
 
-typedef void (*codebooks_callback) (const int64_t* v, size_t size);
-typedef void (*progress_callback) (float progress, float decode_eta);
+using codebooks_callback = std::function<void(const int64_t* v, size_t size)>;
+using progress_callback = std::function<void(float progress, float decode_eta)>;
+using decoder_callback = std::function<void(const float* pam_data, size_t samples)>;
 
 class Audio8Engine 
 {
@@ -204,6 +206,6 @@ public:
     bool initialize(const std::filesystem::path& model_dir = std::filesystem::current_path() / "models");
     bool preload_model();
     void uninit();
-    void synthesize( const TTSRequest& request, progress_callback progress = nullptr, codebooks_callback codebook = nullptr);
+    void synthesize( const TTSRequest& request, progress_callback progress = nullptr, codebooks_callback codebook = nullptr, decoder_callback pcm_callback = nullptr);
     void cancel();
 };

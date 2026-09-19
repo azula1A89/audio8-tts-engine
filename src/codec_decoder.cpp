@@ -97,9 +97,9 @@ public:
 
             if ( cb ) {
                 cb(out.data(), out.size());
+            } else {
+                miniaudio_impl::wav_write(out.data(), out.size());
             }
-
-            miniaudio_impl::wav_write(out.data(), out.size());
 
         } catch (const Ort::Exception& exception) {
             fmt::print("CodecDecoder Batch Error: {}\n", exception.what());

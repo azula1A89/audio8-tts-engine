@@ -170,7 +170,7 @@ public:
         }
     }
 
-    void synthesize( const TTSRequest& request, progress_callback progress_cb, codebooks_callback codebook_cb) {
+    void synthesize( const TTSRequest& request, progress_callback progress_cb, codebooks_callback codebook_cb, decoder_callback pcm_callback) {
         if ( !initialized_ ) {
             fmt::print("Audio8Engine not initialized. \n");
             return;
@@ -224,7 +224,7 @@ public:
 
                 progress(0.9f, eta);
                 if ( !codebook_cb ) {
-                    codec_decoder_->decode_audio_batch(frames);
+                    codec_decoder_->decode_audio_batch(frames, pcm_callback);
                 }
                 progress(1.0f, eta);
                 return;
@@ -342,8 +342,8 @@ bool Audio8Engine::preload_model() { return pImpl->preload_model(); }
 
 void Audio8Engine::uninit() { pImpl->uninit(); }
 
-void Audio8Engine::synthesize( const TTSRequest& request, progress_callback progress, codebooks_callback codebook) {
-    pImpl->synthesize(request, progress, codebook);
+void Audio8Engine::synthesize( const TTSRequest& request, progress_callback progress, codebooks_callback codebook, decoder_callback pcm_callback) {
+    pImpl->synthesize(request, progress, codebook, pcm_callback);
 };
 
 void Audio8Engine::cancel() {

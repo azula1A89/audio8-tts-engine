@@ -26,8 +26,6 @@ SOFTWARE.
 #include <audio8_engine.hpp>
 #include <memory>
 
-typedef void (*decoder_callback) (const float* data, size_t size) ;
-
 class CodecDecoder {
     class Impl;
     std::unique_ptr<Impl> pImpl;
