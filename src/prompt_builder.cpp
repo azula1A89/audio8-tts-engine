@@ -54,11 +54,16 @@ public:
     {}
 
     bool initialize() {
-        if ( !initialized_ ) {
-            auto blob = load_bytes_from_file(tokenizer_dir_.string());
-            tokenizer_ = std::move(tokenizers::Tokenizer::FromBlobJSON(blob));
-            initialized_ = true;
+        try {
+            if ( !initialized_ ) {
+                auto blob = load_bytes_from_file(tokenizer_dir_.string());
+                tokenizer_ = std::move(tokenizers::Tokenizer::FromBlobJSON(blob));
+                initialized_ = true;
+            }
+        } catch (...) {
+            initialized_ = false;
         }
+        
         return initialized_;
     }
 

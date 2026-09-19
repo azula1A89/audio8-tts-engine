@@ -202,7 +202,7 @@ public:
     void registers(std::string voice_name, std::string transcript,
                   std::filesystem::path audio);
     bool initialize(const std::filesystem::path& model_dir = std::filesystem::current_path() / "models");
-    void preload_model();
+    bool preload_model();
     void uninit();
     void synthesize( const TTSRequest& request, progress_callback progress = nullptr, codebooks_callback codebook = nullptr);
     void cancel();

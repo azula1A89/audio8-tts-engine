@@ -60,7 +60,8 @@ public:
         codec_decoder_(nullptr),
         sampler_(nullptr),
         cancel_requested_(false),
-        initialized_(false) {};
+        initialized_(false),
+        loaded_(false) {};
 
     ~Impl() {};
 
@@ -119,15 +120,24 @@ public:
         return initialized_;
     }
 
-    void preload_model() {
+    bool preload_model() {
         if ( initialized_ ) {
-            prompt_builder_->init();
-            slow_ar_->init();
-            fast_ar_->init();
-            codec_decoder_->init();
+            loaded_ = false;
+            if ( !prompt_builder_->init() ) {
+                fmt::print("Failed to load the tokenizer. \n");
+            }else if ( !slow_ar_->init() ) {
+                fmt::print("Failed to load the slow ar. \n");
+            }else if ( !fast_ar_->init() ) {
+                fmt::print("Failed to load the fast ar. \n");
+            }else if ( !codec_decoder_->init() ) {
+                fmt::print("Failed to load the codec_decoder. \n");
+            } else {
+                loaded_ = true;
+            }
         } else {
             fmt::print("Audio8Engine not initialized. \n");
         }
+        return loaded_;
     }
 
     void uninit() {
@@ -163,6 +173,11 @@ public:
     void synthesize( const TTSRequest& request, progress_callback progress_cb, codebooks_callback codebook_cb) {
         if ( !initialized_ ) {
             fmt::print("Audio8Engine not initialized. \n");
+            return;
+        }
+
+        if ( !loaded_ ) {
+            fmt::print("Models or tokenizer not loaded. \n");
             return;
         }
 
@@ -307,6 +322,7 @@ private:
     std::unique_ptr<Sampler> sampler_;
     std::atomic_bool cancel_requested_;
     bool initialized_;
+    bool loaded_;
 };
 
 Audio8Engine::Audio8Engine() : pImpl{ std::make_unique<Impl>() } {}
@@ -322,7 +338,7 @@ bool Audio8Engine::initialize(const std::filesystem::path& model_dir) {
     return pImpl->initialize(model_dir);
 };
 
-void Audio8Engine::preload_model() { pImpl->preload_model(); }
+bool Audio8Engine::preload_model() { return pImpl->preload_model(); }
 
 void Audio8Engine::uninit() { pImpl->uninit(); }
 
