@@ -26,7 +26,16 @@ SOFTWARE.
 #include <fmt/core.h>
 #define MINIAUDIO_IMPLEMENTATION
 #include <miniaudio.h>
+#include <utility>
 
+template <typename T, typename... Args>
+std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
+    try {
+        return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+    } catch (...) {
+        return nullptr;
+    }
+}
 
 class MiniAudio::LoopPlayer
 {
@@ -176,8 +185,8 @@ MiniAudio::~MiniAudio(){};
 bool MiniAudio::play() {
     bool ret = false;
     if ( !player_ ) {
-        player_ = std::make_unique<LoopPlayer>(ma_standard_sample_rate_44100, 2.5f);
-        ret = player_->initialized();
+        player_ = make_unique_nothrow<LoopPlayer>(ma_standard_sample_rate_44100, 2.5f);
+        ret = (player_ && player_->initialized());
     }
     return ret;
 };
@@ -191,7 +200,7 @@ void MiniAudio::stop() {
 
 void MiniAudio::wav_write(const float *buff, uint64_t count) {
     if ( !recoder_ ) {
-        recoder_ = std::make_unique<Recoder>("output.WAV", ma_standard_sample_rate_44100);
+        recoder_ = make_unique_nothrow<Recoder>("output.WAV", ma_standard_sample_rate_44100);
     }
 
     if ( recoder_ ) {

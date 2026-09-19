@@ -75,45 +75,45 @@ public:
             "[{}] is not a vaild model path.\n", paths_.root.string());
         }
 
-        env_ = std::make_unique<Ort::Env>( ORT_LOGGING_LEVEL_ERROR, "Audio8Engine");
+        env_ = make_unique_nothrow<Ort::Env>( ORT_LOGGING_LEVEL_ERROR, "Audio8Engine");
         initialized_ &= (env_ != nullptr);
 
-        voice_manager_ = std::make_unique<VoiceManager>(
+        voice_manager_ = make_unique_nothrow<VoiceManager>(
             env_.get(),
             paths_,
             cfg
         );
         initialized_ &= (voice_manager_ != nullptr);
 
-        prompt_builder_ = std::make_unique<PromptBuilder>(
+        prompt_builder_ = make_unique_nothrow<PromptBuilder>(
             paths_.tokenizer, 
             audio8::SEMATIC_BEGIN_ID, 
             audio8::NUM_CODEBOOKS
         );
         initialized_ &= (prompt_builder_ != nullptr);
 
-        slow_ar_ = std::make_unique<SlowARGenerator>(
+        slow_ar_ = make_unique_nothrow<SlowARGenerator>(
             env_.get(),
             paths_,
             cfg
         );
         initialized_ &= (slow_ar_ != nullptr);
         
-        fast_ar_ = std::make_unique<FastARGenerator>(
+        fast_ar_ = make_unique_nothrow<FastARGenerator>(
             env_.get(),
             paths_,
             cfg
         );
         initialized_ &= (fast_ar_ != nullptr);
 
-        codec_decoder_ = std::make_unique<CodecDecoder>(
+        codec_decoder_ = make_unique_nothrow<CodecDecoder>(
             env_.get(),
             paths_,
             cfg
         );
         initialized_ &= (codec_decoder_ != nullptr);
 
-        sampler_ = std::make_unique<Sampler>(0.7, 0.9, 50);
+        sampler_ = make_unique_nothrow<Sampler>(0.7, 0.9, 50);
         initialized_ &= (sampler_ != nullptr);
 
         return initialized_;
@@ -208,7 +208,9 @@ public:
                 fmt::print("\n decoder ETA {:.1f}sec. \n", eta );
 
                 progress(0.9f, eta);
-                codec_decoder_->decode_audio_batch(frames);
+                if ( !codebook_cb ) {
+                    codec_decoder_->decode_audio_batch(frames);
+                }
                 progress(1.0f, eta);
                 return;
             }

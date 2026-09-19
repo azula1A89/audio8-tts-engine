@@ -24,11 +24,21 @@ SOFTWARE.
 
 #pragma once
 #include <memory>
+#include <utility>
 #include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
 #include <array>
+
+template <typename T, typename... Args>
+std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
+    try {
+        return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+    } catch (...) {
+        return nullptr;
+    }
+}
 
 namespace miniaudio_impl {
     bool play();

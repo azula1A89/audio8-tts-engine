@@ -64,7 +64,7 @@ public:
         GraphOptimizationLevel::ORT_ENABLE_ALL);
         options.SetIntraOpNumThreads(4);
 
-        session_ = std::make_unique<Ort::Session>(env_, path_.c_str(), options);
+        session_ = make_unique_nothrow<Ort::Session>(env_, path_.c_str(), options);
         initialized_ = session_ != nullptr;
         return initialized_;
     }
