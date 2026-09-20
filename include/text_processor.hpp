@@ -25,6 +25,7 @@ SOFTWARE.
 #pragma once
 #include <string>
 #include <memory>
+#include <vector>
 
 class TextProcessor
 {
@@ -38,7 +39,7 @@ public:
     TextProcessor(const TextProcessor&) = delete;
     TextProcessor& operator=(const TextProcessor&) = delete;
 
-
+    std::vector<std::string> split_into_sentences(const std::string& text);
     std::string clean_text( const std::string& text ) const;
     std::string format_reference_text(const std::string& text) const;
 };

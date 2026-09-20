@@ -54,7 +54,62 @@ public:
         }
         return "<|speaker:0|>" + cleaned;
     }
-    
+
+    std::vector<std::string> split_into_sentences(const std::string& text) {
+
+        // source code must saved as UTF-8
+        std::vector<std::string> delimiters = {
+            "。", "？", "！", "；", "，", "\n", "!", "?", ";", ","
+        };
+        
+        std::vector<std::string> sentences;
+        size_t start = 0;
+        size_t i = 0;
+
+        while (i < text.length()) {
+            bool found_delim = false;
+            size_t delim_len = 0;
+            
+            for (const auto& delim : delimiters) {
+                if (text.compare(i, delim.length(), delim) == 0) {
+                    found_delim = true;
+                    delim_len = delim.length();
+                    break;
+                }
+            }
+
+            if (found_delim) {
+
+                i += delim_len;
+                
+                while (i < text.length()) {
+                    bool next_is_delim = false;
+                    for (const auto& d : delimiters) {
+                        if (text.compare(i, d.length(), d) == 0) {
+                            i += d.length();
+                            next_is_delim = true;
+                            break;
+                        }
+                    }
+                    if (!next_is_delim) {
+                        break;
+                    }
+                }
+                
+                sentences.push_back(text.substr(start, i - start));
+                start = i;
+            } else {
+                i++;
+            }
+        }
+
+        if (start < text.length()) {
+            sentences.push_back(text.substr(start));
+        }
+
+        return sentences;
+    }
+
 private:
 
     std::u32string utf8_to_utf32(const std::string& utf8) {
@@ -184,6 +239,10 @@ std::string TextProcessor::clean_text( const std::string& text ) const {
     return pImpl->clean_text(text);
 }
 TextProcessor::~TextProcessor() = default;
+
+std::vector<std::string> TextProcessor::split_into_sentences(const std::string& text) {
+    return pImpl->split_into_sentences(text);
+}
 
 std::string TextProcessor::format_reference_text(const std::string& text) const {
     return pImpl->format_reference_text(text);

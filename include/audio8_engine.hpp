@@ -31,6 +31,7 @@ SOFTWARE.
 #include <vector>
 #include <array>
 #include <functional>
+#include <optional>
 
 template <typename T, typename... Args>
 std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
@@ -45,7 +46,7 @@ namespace miniaudio_impl {
     bool play();
     void stop();
     std::vector<float> load_audio( const std::string& path );
-    void wav_write(const float *buff, uint64_t count);
+    void wav_write(const float *buff, uint64_t count, const char* name = "output.WAV");
 };
 
 namespace audio8
@@ -185,7 +186,7 @@ struct TTSRequest
 
 using codebooks_callback = std::function<void(const int64_t* v, size_t size)>;
 using progress_callback = std::function<void(float progress, float decode_eta)>;
-using decoder_callback = std::function<void(const float* pam_data, size_t samples)>;
+using decoder_callback = std::function<void(std::vector<float>&)>;
 
 class Audio8Engine 
 {
@@ -206,6 +207,10 @@ public:
     bool initialize(const std::filesystem::path& model_dir = std::filesystem::current_path() / "models");
     bool preload_model();
     void uninit();
+    std::optional<std::vector<std::string>> split_text_by_tokens( const std::string& text, size_t max_tokens );
+    void set_progress_callback(progress_callback cb);
+    void set_decoder_callback(decoder_callback cb);
+    void push( const TTSRequest& request);
     void synthesize( const TTSRequest& request, progress_callback progress = nullptr, codebooks_callback codebook = nullptr, decoder_callback pcm_callback = nullptr);
     void cancel();
 };

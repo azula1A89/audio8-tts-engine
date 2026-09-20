@@ -96,7 +96,7 @@ public:
             }
 
             if ( cb ) {
-                cb(out.data(), out.size());
+                cb(out);
             } else {
                 miniaudio_impl::wav_write(out.data(), out.size());
             }

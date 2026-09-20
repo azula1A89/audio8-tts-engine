@@ -10,6 +10,7 @@
 #include <future>
 #include "main.hpp"
 #include <nfd.hpp>
+#include <text_processor.hpp>
 
 using namespace std::chrono_literals;
 
@@ -40,8 +41,6 @@ models/
 std::string choose_folder();
 std::string choose_audio_path();
 void imgui_parent_window();
-float progress = 0.0f;
-float eta = -1.0f;
 
 int main(int argc, char** argv)
 {
@@ -103,13 +102,33 @@ int main(int argc, char** argv)
     std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>();
 
     std::future<void> engine_status = {};
-    std::future<void> synthesize_status = {};
+    // std::future<void> synthesize_status = {};
     std::future<void> registration_status = {};
 
     bool is_initialized = false;
     bool is_loading = false;
-    bool is_running = false;
+    // bool is_running = false;
     bool is_encoding = false;
+
+    float progress = 0.0f;
+    float eta = -1.0f;
+
+    std::optional<std::vector<std::string>> chunks;
+    int request_count = 0;
+    std::vector<std::vector<float>> pcm_data;
+
+    auto progress_total = [&request_count, &pcm_data, &progress](){
+        float x = 0.0f;
+        if ( request_count > 0 ) {
+            x = pcm_data.size();
+            x /= request_count;
+        }
+        return x;
+    };
+
+    auto is_finished = [&request_count, &pcm_data](){
+        return (request_count == pcm_data.size());
+    };
 
     // Main loop
     while ( glfwWindowShouldClose(main_window) == GL_FALSE )
@@ -158,6 +177,16 @@ int main(int argc, char** argv)
             if( engine->initialize(paths.root) )// engine initialize
                 is_initialized = true;
 
+            engine->set_progress_callback([&progress, &eta](float progress_in, float eta_in){
+                progress = progress_in;
+            });
+
+            engine->set_decoder_callback([&pcm_data](std::vector<float> pcm_in){
+                miniaudio_impl::wav_write(pcm_in.data(), pcm_in.size(), 
+                        fmt::format("output_{}.wav", pcm_data.size()+1).c_str());
+                pcm_data.push_back(std::move(pcm_in));
+            });
+
             // auto preload
             if ( is_initialized ) {
                 is_loading = true;
@@ -183,7 +212,7 @@ int main(int argc, char** argv)
                 if (ImGui::BeginMenuBar()) {
 
                     {   // select voice profile
-                        imgui_scoped::Disabled disable(is_running);
+                        // imgui_scoped::Disabled disable(!is_finished());
                         if (ImGui::BeginMenu("voices")) {
 
                             for (const auto& voice : voices ) {
@@ -198,26 +227,27 @@ int main(int argc, char** argv)
 
                     // generate speech
                     if ( ImGui::MenuItem("run") ) {
-                        if ( !is_running && !txt.empty() ) {
-                            synthesize_status = std::async(std::launch::async, [&](){
-                                request.text = txt;
+                        if ( chunks.has_value() && is_finished() ) {
+                            auto s = chunks.value();
+                            for (auto r : s) {
+                                request.text = r;
                                 request.voice_name = request.voice_name.empty()?"anthony":request.voice_name;
                                 request.max_new_tokens = 1024;
-                                engine->synthesize( request, [](float progress_in, float eta_in){
-                                    progress = progress_in;
-                                    eta = eta_in;
-                                });
-                            });
+                                engine->push(request);
+                                request_count++;
+                            }
                         }
                     }
 
                     // cancle generation
                     if ( ImGui::MenuItem("cancle") ) {
                         engine->cancel();
+                        request_count = 0;
+                        pcm_data.clear();
                     }
 
                     {
-                        imgui_scoped::Disabled disable(is_running);
+                        // imgui_scoped::Disabled disable(!is_finished());
                         if ( ImGui::MenuItem("play") ) {
                             if( !miniaudio_impl::play() ) {
                                 miniaudio_impl::stop();
@@ -237,7 +267,7 @@ int main(int argc, char** argv)
                     }
 
                     {
-                        imgui_scoped::Disabled disable(is_running || is_loading);
+                        imgui_scoped::Disabled disable( is_loading );
                         if (ImGui::MenuItem("registration")) {
 
                             ImGui::OpenPopup("registration");
@@ -312,32 +342,70 @@ int main(int argc, char** argv)
                 }
             }
 
-            if ( synthesize_status.valid() ) {
+            if( !is_finished() ){
                 imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
                 imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
-                is_running = true;
-                if ( eta < 0 ) {
-
-                    ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "Generating..");
-                } else {
-
-                    ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Decoding..");
-                }
-                
-                if ( std::future_status::ready == synthesize_status.wait_for(std::chrono::milliseconds(1)) ) {
-                    synthesize_status.get();
-                    synthesize_status = {};
-                    is_running = false;
-                }
+                ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "Generating..");
+                ImGui::ProgressBar(progress_total(), ImVec2(-1.0f, 0.0f), "Total..");
             }
 
             // Text input
             {
+                static TextProcessor processor;
                 imgui_scoped::Font font(cjk);
-                imgui_scoped::Disabled disable(is_running);
-                ImGui::InputTextMultiline("##text to speak", &txt,
-                    ImVec2(-FLT_MIN, -FLT_MIN), 
+                auto sz = ImGui::GetContentRegionAvail();
+                bool changed = ImGui::InputTextMultiline("##text to speak", &txt,
+                    ImVec2(-FLT_MIN, sz.y * 0.25f), 
                     0);
+
+                if( changed ) {
+                    chunks = engine->split_text_by_tokens(txt, 40);
+                }
+                
+                ImGui::BeginChild("##chunk info");
+                {
+                    ImGuiTableColumnFlags table_flags = ImGuiTableFlags_BordersOuter 
+                                    | ImGuiTableFlags_BordersInner 
+                                    | ImGuiTableFlags_RowBg;
+                    ImGuiSelectableFlags select_flags = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap;
+                    ImGuiTableColumnFlags column_flags = ImGuiTableColumnFlags_WidthFixed;
+                    // seq, text, status, options
+                    imgui_scoped::Table table("##chunk table", 4, table_flags);
+                    imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {0.0f, 0.0f});
+                    
+                    float ax = ImGui::GetContentRegionAvail().x;
+                    ImGui::TableSetupColumn("seq", column_flags, 0.05f * ax);
+                    ImGui::TableSetupColumn("text", column_flags, 0.75f * ax );
+                    ImGui::TableSetupColumn("status", column_flags, 0.1f * ax);
+                    ImGui::TableSetupColumn("options", column_flags, 0.1f * ax);
+                    ImGui::TableHeadersRow();
+                    if ( chunks.has_value() ) {
+                        auto s = chunks.value();
+                        for (int i = 0; i < s.size(); i++) {
+                            imgui_scoped::ID id(i);
+                            ImGui::TableNextRow();
+                            ImGui::TableSetColumnIndex(0); 
+                            ImGui::Selectable(fmt::format("{}", i).c_str(), false, select_flags);
+
+                            ImGui::TableSetColumnIndex(1);
+                            // ImGui::Text("%s", processor.clean_text(s[i]).c_str());
+                            imgui_scoped::TableTextCentered(processor.clean_text(s[i]).c_str());
+
+                            ImGui::TableSetColumnIndex(2);
+                            imgui_scoped::TableTextCentered(i < pcm_data.size() ? "done":"ongoing");
+
+                            ImGui::TableSetColumnIndex(3);
+                            if (ImGui::BeginMenu("voices")) {
+
+                                for (const auto& voice : voices ) {
+                                    if ( ImGui::MenuItem( voice.c_str(), NULL, request.voice_name == voice) ) { }
+                                }
+                                ImGui::EndMenu();
+                            }
+                        }
+                    }
+                }
+                ImGui::EndChild();
             }
 
             ImGui::End();

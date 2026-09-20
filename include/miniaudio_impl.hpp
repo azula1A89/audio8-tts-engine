@@ -40,7 +40,7 @@ public:
     bool play();
     void stop();
     std::vector<float> load_audio( const std::string& path );
-    void wav_write(const float *buff, uint64_t count);
+    void wav_write(const float *buff, uint64_t count, const char* name = "output.WAV");
 
 private:
     std::unique_ptr<LoopPlayer> player_;

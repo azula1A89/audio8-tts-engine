@@ -5,6 +5,19 @@
 
 namespace imgui_scoped {
 
+    static void TableTextCentered(const char* text) {
+        float cell_width = ImGui::GetContentRegionAvail().x;
+        float text_width = ImGui::CalcTextSize(text).x;
+        
+        // Prevent a negative offset if the text is wider than the column
+        float offset_x = (cell_width - text_width) * 0.5f;
+        if (offset_x > 0.0f) {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
+        }
+        
+        ImGui::Text("%s", text);
+    }
+
     class NonCopyable {
     protected:
         NonCopyable() = default;

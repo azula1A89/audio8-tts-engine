@@ -25,6 +25,8 @@ SOFTWARE.
 #include <audio8_engine.hpp>
 #include <filesystem>
 #include <atomic>
+#include <future>
+#include <queue>
 #include <text_processor.hpp>
 #include <prompt_builder.hpp>
 #include <slow_ar_generator.hpp>
@@ -36,7 +38,9 @@ SOFTWARE.
 #include <onnxruntime_cxx_api.h>
 #include <fmt/color.h>
 #include <miniaudio_impl.hpp>
+#include <thread>
 
+using namespace std::chrono_literals;
 using CodecFrame = std::array<int64_t, audio8::NUM_CODEBOOKS>;
 
 namespace miniaudio_impl {
@@ -44,11 +48,32 @@ namespace miniaudio_impl {
     bool play() { return miniaudio.play(); }
     void stop() { miniaudio.stop(); }
     std::vector<float> load_audio( const std::string& path ) { return  miniaudio.load_audio(path); };
-    void wav_write(const float *buff, uint64_t count) { miniaudio.wav_write(buff, count); };
+    void wav_write(const float *buff, uint64_t count, const char* name) { miniaudio.wav_write(buff, count, name); };
 }
 
 class Audio8Engine::Impl
 {
+private:
+    Audio8ModelPaths paths_;
+    std::unique_ptr<Ort::Env> env_;
+    std::unique_ptr<VoiceManager> voice_manager_;
+    std::unique_ptr<PromptBuilder> prompt_builder_;
+    std::unique_ptr<SlowARGenerator> slow_ar_;
+    std::unique_ptr<FastARGenerator> fast_ar_;
+    std::unique_ptr<CodecDecoder> codec_decoder_;
+    std::unique_ptr<Sampler> sampler_;
+    std::atomic_bool cancel_requested_;
+    bool initialized_;
+    bool loaded_;
+    progress_callback on_progress_update_;
+    decoder_callback on_pcm_update_;
+    std::jthread generate_thread_;
+    std::jthread decoder_thread_;
+    std::queue<TTSRequest> request_queue_;
+    std::queue<std::vector<code_frame>> generate_result_queue_;
+    std::mutex request_mutex_;
+    std::mutex code_frame_mutex_;
+    
 public:
     Impl() :
         paths_(),
@@ -61,9 +86,17 @@ public:
         sampler_(nullptr),
         cancel_requested_(false),
         initialized_(false),
-        loaded_(false) {};
+        loaded_(false), 
+        on_progress_update_(nullptr),
+        on_pcm_update_(nullptr) {
+            generate_thread_start();
+            decoder_thread_start();
+        };
 
-    ~Impl() {};
+    ~Impl() {
+        generate_thread_request_stop();
+        decoder_thread_request_stop();
+    };
 
     bool initialize(const std::filesystem::path& model_dir) {
         RuntimeConfig cfg;
@@ -153,7 +186,12 @@ public:
 
     void shutdown() {}
 
-    void cancel() { cancel_requested_.store(true); }
+    void cancel() { 
+        cancel_requested_.store(true);
+        std::lock_guard<std::mutex> lock(request_mutex_);
+        std::queue<TTSRequest> empty;
+        request_queue_.swap(empty);
+    }
 
     std::vector<std::string> list_voices() {
         if ( voice_manager_ ) {
@@ -170,6 +208,163 @@ public:
         }
     }
 
+    void set_decoder_callback(decoder_callback on_pcm_update) {
+        on_pcm_update_ = on_pcm_update;
+    }
+
+    std::optional<std::vector<std::string>> split_text_by_tokens( const std::string& text, size_t max_tokens ) {
+        return prompt_builder_->split_text_by_tokens(text, max_tokens);
+    }
+
+    void set_progress_callback(progress_callback cb) {
+        on_progress_update_ = cb;
+    }
+
+    void generate_thread_start() {
+        generate_thread_ = std::jthread([this](std::stop_token st) {
+            TTSRequest item;
+            while ( !st.stop_requested() ) {
+                if ( request_queue_.empty() ) {
+                    std::this_thread::sleep_for( 100ms );
+                } else {
+                    {
+                        std::lock_guard<std::mutex> lock(request_mutex_);
+                        item = std::move(request_queue_.front());
+                        request_queue_.pop();
+                    }
+                    generate(item, on_progress_update_);
+                }
+            }
+        });
+    }
+
+    void generate_thread_request_stop() {
+        if (generate_thread_.joinable()) {
+            generate_thread_.request_stop();
+            generate_thread_.join();
+        }
+    }
+
+    void decoder_thread_start() {
+        decoder_thread_ = std::jthread([this](std::stop_token st) {
+            std::vector<code_frame> item;
+            while ( !st.stop_requested() ) {
+                if ( generate_result_queue_.empty() ) {
+                    std::this_thread::sleep_for( 100ms );
+                } else {
+                    {
+                        std::lock_guard<std::mutex> lock(code_frame_mutex_);
+                        item = std::move(generate_result_queue_.front());
+                        generate_result_queue_.pop();
+                    }
+                    fmt::print("item:{}\n", item.size());
+                    codec_decoder_->decode_audio_batch(item, on_pcm_update_);
+                }
+            }
+        });
+    }
+
+    void decoder_thread_request_stop() {
+        if (decoder_thread_.joinable()) {
+            decoder_thread_.request_stop();
+            decoder_thread_.join();
+        }
+    }
+
+    void push(const TTSRequest& request) {
+        std::lock_guard<std::mutex> lock(request_mutex_);
+        request_queue_.push(request);
+    }
+
+    void generate(const TTSRequest& request, progress_callback progress_cb) {
+        if ( !initialized_ ) {
+            fmt::print("Audio8Engine not initialized. \n");
+            return;
+        }
+
+        if ( !loaded_ ) {
+            fmt::print("Models or tokenizer not loaded. \n");
+            return;
+        }
+
+        cancel_requested_.store(false);
+
+        auto progress = [&progress_cb](float p, float eta = -1.0f){
+            if (progress_cb) progress_cb(p, eta);
+        };
+
+        VoiceProfile profile;
+        bool ret = voice_manager_->load_profile(request.voice_name, profile);
+        if( !ret ) return;
+        
+        Prompt prompt = prompt_builder_->build( request.text, profile.transcript, profile.codec_codes);
+        progress(0.05f);
+
+        size_t char_count = prompt.suffix_len - 11;
+        double estimated_total_frames = std::max(1.0, char_count * 6.0);
+
+        SlowARInput slow_input;
+        make_initial_slow_input(profile, prompt, slow_input);
+
+        SlowAROutput slow_output;
+        slow_ar_->reset_kvcache();
+        slow_ar_->generate_next(slow_input, slow_output);
+
+        std::list<int> previous;
+        code_frame codebooks;
+        std::vector<code_frame> frames;
+
+        for (int step = 0; step < request.max_new_tokens; step++) {
+            if ( cancel_requested_.load() ) {
+                return;
+            }
+
+            int semantic = sampler_->sample_semantic(slow_output.logits.data, previous);
+            if ( semantic == audio8::IM_END_ID ) {
+                {
+                    std::lock_guard<std::mutex> guard(code_frame_mutex_);
+                    generate_result_queue_.push(frames);
+                }
+                progress(1.0f);
+                return;
+            }
+            previous.push_back(semantic);
+            if( previous.size() > 10 ) previous.pop_front();
+
+            // fast step 0
+            FastARInput fast_input(slow_output.slow_hidden, 0, true, 0);
+            FastAROutput fast_output;
+            fast_ar_->reset_kvcache();
+            fast_ar_->generate_next(fast_input, fast_output);
+
+            int token = std::min(std::max(semantic - audio8::SEMATIC_BEGIN_ID, 0), audio8::CODEBOOK_SIZE - 1);
+
+            codebooks[0] = token;
+
+            //fast step 1-9
+            for (int fast_pos = 1; fast_pos < audio8::NUM_CODEBOOKS; fast_pos++) {
+                FastARInput fast_input(slow_output.slow_hidden, token, false, fast_pos);
+                
+                fast_ar_->generate_next(fast_input, fast_output);
+
+                token = sampler_->sample(fast_output.logits.data);
+                codebooks[fast_pos] = token;
+            }
+
+            frames.push_back(codebooks);
+
+            update_slow_input(slow_input, semantic, prompt.prompt_len, step, codebooks);
+            slow_ar_->generate_next(slow_input, slow_output);
+            progress(0.05f + 0.95f * std::min(0.99f, (float)step / (float)estimated_total_frames));
+        }
+
+        {
+            std::lock_guard<std::mutex> guard(code_frame_mutex_);
+            generate_result_queue_.push(frames);
+        }
+        progress(1.0f);
+    }
+
     void synthesize( const TTSRequest& request, progress_callback progress_cb, codebooks_callback codebook_cb, decoder_callback pcm_callback) {
         if ( !initialized_ ) {
             fmt::print("Audio8Engine not initialized. \n");
@@ -182,6 +377,7 @@ public:
         }
 
         cancel_requested_.store(false);
+
         auto progress = [&progress_cb](float p, float eta = -1.0f){ 
             if (progress_cb) progress_cb(p, eta);
         };
@@ -216,7 +412,7 @@ public:
             int semantic = sampler_->sample_semantic(slow_output.logits.data, previous);
             if ( semantic == audio8::IM_END_ID ) {
 
-                // fmt::print("\n\n STOP SIGN FOUND. \n\n");
+                fmt::print("\n\n STOP SIGN FOUND. \n\n");
                 size_t total_frames = frames.size();
                 float eta = 1e-3f * codec_decoder_->estimate_decode_time_ms(total_frames);
                 
@@ -311,18 +507,6 @@ private:
         }
     }
 
-private:
-    Audio8ModelPaths paths_;
-    std::unique_ptr<Ort::Env> env_;
-    std::unique_ptr<VoiceManager> voice_manager_;
-    std::unique_ptr<PromptBuilder> prompt_builder_;
-    std::unique_ptr<SlowARGenerator> slow_ar_;
-    std::unique_ptr<FastARGenerator> fast_ar_;
-    std::unique_ptr<CodecDecoder> codec_decoder_;
-    std::unique_ptr<Sampler> sampler_;
-    std::atomic_bool cancel_requested_;
-    bool initialized_;
-    bool loaded_;
 };
 
 Audio8Engine::Audio8Engine() : pImpl{ std::make_unique<Impl>() } {}
@@ -341,6 +525,18 @@ bool Audio8Engine::initialize(const std::filesystem::path& model_dir) {
 bool Audio8Engine::preload_model() { return pImpl->preload_model(); }
 
 void Audio8Engine::uninit() { pImpl->uninit(); }
+std::optional<std::vector<std::string>> Audio8Engine::split_text_by_tokens( const std::string& text, size_t max_tokens ) {
+    return pImpl->split_text_by_tokens(text, max_tokens);
+}
+void Audio8Engine::set_progress_callback(progress_callback cb) {
+    pImpl->set_progress_callback(cb);
+}
+void Audio8Engine::set_decoder_callback(decoder_callback cb) {
+    pImpl->set_decoder_callback(cb);
+}
+void Audio8Engine::push( const TTSRequest& request) {
+    pImpl->push(request);
+}
 
 void Audio8Engine::synthesize( const TTSRequest& request, progress_callback progress, codebooks_callback codebook, decoder_callback pcm_callback) {
     pImpl->synthesize(request, progress, codebook, pcm_callback);

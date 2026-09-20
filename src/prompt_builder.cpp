@@ -23,7 +23,6 @@ SOFTWARE.
 */
 
 #include <prompt_builder.hpp>
-// #include <tokenizers_cpp/tokenizer.hpp>
 #include <tokenizers_cpp.h>
 #include <text_processor.hpp>
 #include <iostream>
@@ -66,6 +65,67 @@ public:
         
         return initialized_;
     }
+
+    std::optional<std::vector<std::string>> split_text_by_tokens( const std::string& text, size_t max_tokens ) {
+        if ( !initialized_ ) {
+            initialized_ = initialize();
+            if ( !initialized_ ) return std::nullopt;
+        }
+
+        std::vector<std::string> chunks;
+        std::vector<std::string> sentences = text_processor_->split_into_sentences(text);
+
+        std::string current_chunk_text = "";
+        size_t current_chunk_tokens = 0;
+
+        for (const auto& sentence : sentences) {
+
+            std::vector<int32_t> sentence_tokens = tokenizer_->Encode(sentence);
+            size_t sentence_token_count = sentence_tokens.size();
+
+            if (sentence_token_count == 0) continue;
+
+            // super long sentence
+            if (sentence_token_count > max_tokens) {
+
+                if (!current_chunk_text.empty()) {
+                    chunks.push_back(current_chunk_text);
+                    current_chunk_text = "";
+                    current_chunk_tokens = 0;
+                }
+
+                // split token then decode back to string
+                for (size_t i = 0; i < sentence_token_count; i += max_tokens) {
+                    size_t length = std::min(max_tokens, sentence_token_count - i);
+                    std::vector<int32_t> sub_tokens(sentence_tokens.begin() + i, 
+                                                    sentence_tokens.begin() + i + length);
+                    std::string sub_text = tokenizer_->Decode(sub_tokens);
+                    chunks.push_back(sub_text);
+                }
+                continue;
+            }
+
+            // safe to append current sentence
+            if (current_chunk_tokens + sentence_token_count <= max_tokens) {
+                current_chunk_text += sentence;
+                current_chunk_tokens += sentence_token_count;
+            } 
+            // put current sentence into a new chunk
+            else {
+                chunks.push_back(current_chunk_text);
+                current_chunk_text = sentence;
+                current_chunk_tokens = sentence_token_count;
+            }
+        }
+
+        // last chunk
+        if (!current_chunk_text.empty()) {
+            chunks.push_back(current_chunk_text);
+        }
+
+        return chunks;
+    }
+
 
     Prompt build( const std::string& target_text, const std::string& transcript, const std::vector<int64_t>& codes) {
         if ( !initialized_ ) {
@@ -200,6 +260,10 @@ private:
 
 PromptBuilder::PromptBuilder(const std::filesystem::path& tokenizer_dir, int semantic_begin_id, int num_codebooks) : pImpl{ std::make_unique<Impl>( tokenizer_dir, semantic_begin_id, num_codebooks ) } {}
 PromptBuilder::~PromptBuilder() = default;
+
+std::optional<std::vector<std::string>> PromptBuilder::split_text_by_tokens( const std::string& text, size_t max_tokens ) {
+    return pImpl->split_text_by_tokens(text, max_tokens);
+}
 
 Prompt PromptBuilder::build( const std::string& target_text, const std::string& transcript, const std::filesystem::path code_file) {
     return pImpl->build(target_text, transcript, code_file);
