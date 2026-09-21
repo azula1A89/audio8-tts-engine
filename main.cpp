@@ -102,21 +102,28 @@ int main(int argc, char** argv)
     std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>();
 
     std::future<void> engine_status = {};
-    // std::future<void> synthesize_status = {};
     std::future<void> registration_status = {};
+    std::future<std::optional<std::vector<std::string>>> split_text_status = {};
 
     bool is_initialized = false;
     bool is_loading = false;
-    // bool is_running = false;
+    bool is_segmenting = false;
     bool is_encoding = false;
 
     float progress = 0.0f;
     float eta = -1.0f;
 
-    std::vector<std::optional<std::pair<std::string, std::string>>> configs;
+    struct config_item_s {
+        int id;
+        std::string text;
+        std::string voice;
+    };
+    using config_t = std::vector<config_item_s>;
+    config_t configs;
 
     int request_count = 0;
     std::vector<std::vector<float>> pcm_data;
+    // std::mutex pcm_data_mutex;
 
     auto progress_total = [&request_count, &pcm_data, &progress](){
         float x = 0.0f;
@@ -229,13 +236,14 @@ int main(int argc, char** argv)
                     // generate speech
                     if ( ImGui::MenuItem("run") ) {
                         if ( !configs.empty() && is_finished() ) {
+                            request_count = 0;
+                            pcm_data.clear();
+
                             TTSRequest request{};
                             for (const auto& r : configs) {
-                                if ( !r.has_value() ) {
-                                    continue;
-                                }
-                                request.text = r.value().first;
-                                request.voice_name = r.value().second;
+
+                                request.text = r.text;
+                                request.voice_name = r.voice;
                                 request.max_new_tokens = 1024;
                                 engine->push(request);
                                 request_count++;
@@ -332,6 +340,29 @@ int main(int argc, char** argv)
                 ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Loading..");
             }
 
+            if ( split_text_status.valid() ) {
+                imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
+                imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
+                ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Segmenting text...");
+
+                if ( split_text_status.wait_for(10ms) == std::future_status::ready ) {
+                    const auto& chunks = split_text_status.get();
+                    if ( chunks.has_value() ) {
+                        TextProcessor processor;
+                        configs.clear();
+                        config_item_s item;
+                        for (int i = 0; i < chunks->size(); i++) {
+                            item.id = i;
+                            item.text = processor.clean_text(chunks.value()[i]);
+                            item.voice = default_voice;
+                            configs.push_back(item);
+                        }
+                    }
+                    split_text_status = {};
+                    is_segmenting = false;
+                }
+            }
+
             if ( registration_status.valid() ) {
                 imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
                 imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
@@ -355,9 +386,8 @@ int main(int argc, char** argv)
 
             // Text input
             {
-                static TextProcessor processor;
                 imgui_scoped::Font font(cjk);
-                imgui_scoped::Disabled disable(!is_finished());
+                imgui_scoped::Disabled disable(!is_finished() || is_segmenting);
 
                 auto sz = ImGui::GetContentRegionAvail();
                 bool changed = ImGui::InputTextMultiline("##text to speak", &txt,
@@ -365,13 +395,11 @@ int main(int argc, char** argv)
                     0);
 
                 if( changed ) {
-                    auto chunks = engine->split_text_by_tokens(txt, 40);
-                    if ( chunks.has_value() ) {
-                        configs.clear();
-                        for (auto c : chunks.value()) {
-                            configs.push_back(std::make_pair(c, default_voice));
-                        }
-                    }
+                    is_segmenting = true;
+                    configs.clear();
+                    split_text_status = std::async(std::launch::async, [&txt, &engine, &default_voice](){
+                        return engine->split_text_by_tokens(txt, 40);
+                    });
                 }
                 
                 ImGui::BeginChild("##chunk info");
@@ -379,70 +407,96 @@ int main(int argc, char** argv)
                     ImGuiTableColumnFlags table_flags = ImGuiTableFlags_BordersOuter 
                                     | ImGuiTableFlags_BordersInner 
                                     | ImGuiTableFlags_RowBg;
-                    ImGuiSelectableFlags select_flags = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap;
+                    ImGuiSelectableFlags select_flags = ImGuiSelectableFlags_SpanAllColumns 
+                                    | ImGuiSelectableFlags_AllowDoubleClick
+                                    | ImGuiSelectableFlags_AllowOverlap;
                     ImGuiTableColumnFlags column_flags = ImGuiTableColumnFlags_WidthFixed;
                     // seq, text, status, options
                     imgui_scoped::Table table("##chunk table", 4, table_flags);
                     imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {0.0f, 0.0f});
                     imgui_scoped::StyleVar s_txt_align(ImGuiStyleVar_SelectableTextAlign, {0.5f, 0.5f});
                     imgui_scoped::StyleVar selectable_var(ImGuiStyleVar_SelectableRounding, 12.0f);
-                    
+
                     float ax = ImGui::GetContentRegionAvail().x;
-                    ImGui::TableSetupColumn("seq", column_flags, 0.02f * ax);
-                    ImGui::TableSetupColumn("text", column_flags, 0.8f * ax );
+                    ImGui::TableSetupColumn("seq", column_flags, 0.05f * ax);
+                    ImGui::TableSetupColumn("text", column_flags, 0.77f * ax );
                     ImGui::TableSetupColumn("status", column_flags, 0.08f * ax);
                     ImGui::TableSetupColumn("options", column_flags, 0.1f * ax);
                     ImGui::TableHeadersRow();
 
-                    static int select_i = -1;
-                    int invalid = 0;
-                    for (int i = 0; i < configs.size(); i++) {
-                        auto& cfg = configs[i];
-                        if ( !cfg.has_value() ) {
-                            invalid++;
-                            continue;
-                        }
-                        bool done = ( i - invalid < pcm_data.size() );
-                        bool ongoing = ( i - invalid == pcm_data.size() );
-                        bool todo = ( i - invalid > pcm_data.size() );
-                        bool active = ( request_count > 0 );
-                        bool selected = ( ongoing && active );
-                             selected |= ( select_i == i );
+                    
+                    ImGuiListClipper clipper;
+                    clipper.Begin(configs.size());
 
-                        if ( ongoing && active ) {
-                            ImGui::SetScrollHereY(0.5f);
-                        }
+                    static int select_id = -1;
+                    static int edit_select_id = -1;
+                    while (clipper.Step()) {
+                        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
+                            auto& cfg = configs[i];
 
-                        imgui_scoped::ID id(i);
-                        ImGui::TableNextRow();
+                            bool done = ( i < pcm_data.size() );
+                            bool ongoing = ( i == pcm_data.size() );
+                            bool todo = ( i > pcm_data.size() );
+                            bool active = ( request_count > 0 );
+                            bool selected = ( ongoing && active );
+                                selected |= ( select_id == cfg.id );
 
-                        ImGui::TableSetColumnIndex(0); 
-                        if(ImGui::Selectable(fmt::format("{}", i).c_str(), selected, select_flags)) {
-                            select_i = i;
-                        }
+                            if ( ongoing && active ) {
+                                ImGui::SetScrollHereY(0.5f);
+                            }
 
-                        ImGui::TableSetColumnIndex(1);
-                        imgui_scoped::TableTextCentered(processor.clean_text(cfg.value().first).c_str());
+                            imgui_scoped::ID id(i);
+                            ImGui::TableNextRow();
 
-                        ImGui::TableSetColumnIndex(2);
-                        imgui_scoped::TableTextCentered(done?"done":ongoing?"ongoing":todo?"todo":"...");
-
-                        ImGui::TableSetColumnIndex(3);
-                        if (ImGui::BeginMenu(cfg.value().second.c_str())) {
-
-                            for (const auto& voice : voices ) {
-                                if ( ImGui::MenuItem( voice.c_str(), NULL, cfg.value().second == voice) ) {
-                                    cfg.value().second = voice;
+                            ImGui::TableSetColumnIndex(0); 
+                            if(ImGui::Selectable(fmt::format("{}", i).c_str(), selected, select_flags)) {
+                                select_id = cfg.id;
+                            }
+                            if (ImGui::IsItemFocused()) {
+                                if (ImGui::IsMouseDoubleClicked(0)) {
+                                    edit_select_id = select_id;
                                 }
                             }
-                            ImGui::EndMenu();
+
+                            if ( edit_select_id != select_id ) {
+                                edit_select_id = -1;
+                            }
+
+                            ImGui::TableSetColumnIndex(1);
+                            if ( edit_select_id == cfg.id ) {
+                                ImGui::SetNextItemWidth(0.77f * ax);
+                                ImGui::InputText("##text", &cfg.text);
+                            } else {
+                                imgui_scoped::TableTextCentered(cfg.text.c_str());
+                            }
+
+                            ImGui::TableSetColumnIndex(2);
+                            imgui_scoped::TableTextCentered(done?"done":ongoing?"ongoing":todo?"todo":"...");
+
+                            ImGui::TableSetColumnIndex(3);
+                            if (ImGui::BeginMenu(cfg.voice.c_str())) {
+
+                                for (const auto& voice : voices ) {
+                                    if ( ImGui::MenuItem( voice.c_str(), NULL, cfg.voice == voice) ) {
+                                        cfg.voice = voice;
+                                    }
+                                }
+                                ImGui::EndMenu();
+                            }
                         }
                     }
 
                     if ( ImGui::IsKeyDown(ImGuiKey_Delete) ) {
-                        if ( select_i >= 0 && select_i < configs.size() ) {
-                            configs[select_i] = std::nullopt;
-                            select_i = -1;
+                        if ( select_id >= 0 ) {
+                            for(config_t::iterator it = configs.begin(); it != configs.end();) {
+                                if ( it->id == select_id ) {
+                                    it = configs.erase(it);
+                                    break;
+                                } else {
+                                    ++it;
+                                }
+                            }
+                            select_id = -1;
                         }
                     }
                 }
