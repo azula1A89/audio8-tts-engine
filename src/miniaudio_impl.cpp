@@ -207,7 +207,6 @@ void MiniAudio::wav_write(const float *buff, uint64_t count, const char* name) {
         recoder_->write(buff, count);
         recoder_.reset();
         recoder_ = nullptr;
-        fmt::print("\n\n audio saved to output.WAV. \n\n");
     }
 }
 

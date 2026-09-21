@@ -94,10 +94,10 @@ int main(int argc, char** argv)
     Audio8ModelPaths paths{"models"};
     std::string txt = "大家好，我是anthony。";
     std::vector<std::string> voices;
+    std::string default_voice = "anthony";
     std::string new_voice_name;
     std::string transcript;
     std::string ref_audio_path;
-    TTSRequest request{};
 
     std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>();
 
@@ -113,7 +113,8 @@ int main(int argc, char** argv)
     float progress = 0.0f;
     float eta = -1.0f;
 
-    std::optional<std::vector<std::string>> chunks;
+    std::vector<std::optional<std::pair<std::string, std::string>>> configs;
+
     int request_count = 0;
     std::vector<std::vector<float>> pcm_data;
 
@@ -216,8 +217,8 @@ int main(int argc, char** argv)
                         if (ImGui::BeginMenu("voices")) {
 
                             for (const auto& voice : voices ) {
-                                if ( ImGui::MenuItem( voice.c_str(), NULL, request.voice_name == voice) ) {
-                                    request.voice_name = voice;
+                                if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
+                                    default_voice = voice;
                                 }
                             }
 
@@ -227,11 +228,14 @@ int main(int argc, char** argv)
 
                     // generate speech
                     if ( ImGui::MenuItem("run") ) {
-                        if ( chunks.has_value() && is_finished() ) {
-                            auto s = chunks.value();
-                            for (auto r : s) {
-                                request.text = r;
-                                request.voice_name = request.voice_name.empty()?"anthony":request.voice_name;
+                        if ( !configs.empty() && is_finished() ) {
+                            TTSRequest request{};
+                            for (const auto& r : configs) {
+                                if ( !r.has_value() ) {
+                                    continue;
+                                }
+                                request.text = r.value().first;
+                                request.voice_name = r.value().second;
                                 request.max_new_tokens = 1024;
                                 engine->push(request);
                                 request_count++;
@@ -353,13 +357,21 @@ int main(int argc, char** argv)
             {
                 static TextProcessor processor;
                 imgui_scoped::Font font(cjk);
+                imgui_scoped::Disabled disable(!is_finished());
+
                 auto sz = ImGui::GetContentRegionAvail();
                 bool changed = ImGui::InputTextMultiline("##text to speak", &txt,
                     ImVec2(-FLT_MIN, sz.y * 0.25f), 
                     0);
 
                 if( changed ) {
-                    chunks = engine->split_text_by_tokens(txt, 40);
+                    auto chunks = engine->split_text_by_tokens(txt, 40);
+                    if ( chunks.has_value() ) {
+                        configs.clear();
+                        for (auto c : chunks.value()) {
+                            configs.push_back(std::make_pair(c, default_voice));
+                        }
+                    }
                 }
                 
                 ImGui::BeginChild("##chunk info");
@@ -372,36 +384,65 @@ int main(int argc, char** argv)
                     // seq, text, status, options
                     imgui_scoped::Table table("##chunk table", 4, table_flags);
                     imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {0.0f, 0.0f});
+                    imgui_scoped::StyleVar s_txt_align(ImGuiStyleVar_SelectableTextAlign, {0.5f, 0.5f});
+                    imgui_scoped::StyleVar selectable_var(ImGuiStyleVar_SelectableRounding, 12.0f);
                     
                     float ax = ImGui::GetContentRegionAvail().x;
-                    ImGui::TableSetupColumn("seq", column_flags, 0.05f * ax);
-                    ImGui::TableSetupColumn("text", column_flags, 0.75f * ax );
-                    ImGui::TableSetupColumn("status", column_flags, 0.1f * ax);
+                    ImGui::TableSetupColumn("seq", column_flags, 0.02f * ax);
+                    ImGui::TableSetupColumn("text", column_flags, 0.8f * ax );
+                    ImGui::TableSetupColumn("status", column_flags, 0.08f * ax);
                     ImGui::TableSetupColumn("options", column_flags, 0.1f * ax);
                     ImGui::TableHeadersRow();
-                    if ( chunks.has_value() ) {
-                        auto s = chunks.value();
-                        for (int i = 0; i < s.size(); i++) {
-                            imgui_scoped::ID id(i);
-                            ImGui::TableNextRow();
-                            ImGui::TableSetColumnIndex(0); 
-                            ImGui::Selectable(fmt::format("{}", i).c_str(), false, select_flags);
 
-                            ImGui::TableSetColumnIndex(1);
-                            // ImGui::Text("%s", processor.clean_text(s[i]).c_str());
-                            imgui_scoped::TableTextCentered(processor.clean_text(s[i]).c_str());
+                    static int select_i = -1;
+                    int invalid = 0;
+                    for (int i = 0; i < configs.size(); i++) {
+                        auto& cfg = configs[i];
+                        if ( !cfg.has_value() ) {
+                            invalid++;
+                            continue;
+                        }
+                        bool done = ( i - invalid < pcm_data.size() );
+                        bool ongoing = ( i - invalid == pcm_data.size() );
+                        bool todo = ( i - invalid > pcm_data.size() );
+                        bool active = ( request_count > 0 );
+                        bool selected = ( ongoing && active );
+                             selected |= ( select_i == i );
 
-                            ImGui::TableSetColumnIndex(2);
-                            imgui_scoped::TableTextCentered(i < pcm_data.size() ? "done":"ongoing");
+                        if ( ongoing && active ) {
+                            ImGui::SetScrollHereY(0.5f);
+                        }
 
-                            ImGui::TableSetColumnIndex(3);
-                            if (ImGui::BeginMenu("voices")) {
+                        imgui_scoped::ID id(i);
+                        ImGui::TableNextRow();
 
-                                for (const auto& voice : voices ) {
-                                    if ( ImGui::MenuItem( voice.c_str(), NULL, request.voice_name == voice) ) { }
+                        ImGui::TableSetColumnIndex(0); 
+                        if(ImGui::Selectable(fmt::format("{}", i).c_str(), selected, select_flags)) {
+                            select_i = i;
+                        }
+
+                        ImGui::TableSetColumnIndex(1);
+                        imgui_scoped::TableTextCentered(processor.clean_text(cfg.value().first).c_str());
+
+                        ImGui::TableSetColumnIndex(2);
+                        imgui_scoped::TableTextCentered(done?"done":ongoing?"ongoing":todo?"todo":"...");
+
+                        ImGui::TableSetColumnIndex(3);
+                        if (ImGui::BeginMenu(cfg.value().second.c_str())) {
+
+                            for (const auto& voice : voices ) {
+                                if ( ImGui::MenuItem( voice.c_str(), NULL, cfg.value().second == voice) ) {
+                                    cfg.value().second = voice;
                                 }
-                                ImGui::EndMenu();
                             }
+                            ImGui::EndMenu();
+                        }
+                    }
+
+                    if ( ImGui::IsKeyDown(ImGuiKey_Delete) ) {
+                        if ( select_i >= 0 && select_i < configs.size() ) {
+                            configs[select_i] = std::nullopt;
+                            select_i = -1;
                         }
                     }
                 }
