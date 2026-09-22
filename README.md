@@ -11,8 +11,8 @@ This project focuses on running the Audio8-TTS inference pipeline natively in C+
 
 Pre-built binaries are available on the releases page: 
 
-- [Windows x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.3/audio8-tts-engine-windows.zip)
-- [Linux x64](https://github.com/azula1A89/audio8-tts-engine/releases/download/v0.0.3/audio8-tts-engine-linux.tar.gz)
+- [Windows x64](https://github.com/azula1A89/audio8-tts-engine/releases/latest/download/audio8-tts-engine-windows.zip)
+- [Linux x64](https://github.com/azula1A89/audio8-tts-engine/releases/latest/download/audio8-tts-engine-linux.tar.gz)
 
 
 > **Project status:** Experimental / early-stage open-source implementation.  

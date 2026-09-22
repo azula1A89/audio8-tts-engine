@@ -74,4 +74,4 @@ jobs:
         with:
           files: ./assets/*
           generate_release_notes: true
-          prerelease: true
+          prerelease: false
