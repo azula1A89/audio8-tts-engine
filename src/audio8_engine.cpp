@@ -25,7 +25,6 @@ SOFTWARE.
 #include <audio8_engine.hpp>
 #include <filesystem>
 #include <atomic>
-#include <future>
 #include <queue>
 #include <text_processor.hpp>
 #include <prompt_builder.hpp>
@@ -45,8 +44,8 @@ using CodecFrame = std::array<int64_t, audio8::NUM_CODEBOOKS>;
 
 namespace miniaudio_impl {
     MiniAudio miniaudio;
-    bool play() { return miniaudio.play(); }
-    void stop() { miniaudio.stop(); }
+    bool play(const char* file) { return miniaudio.play_file(file); }
+    void stop() { miniaudio.stop_file(); }
     std::vector<float> load_audio( const std::string& path ) { return  miniaudio.load_audio(path); };
     void wav_write(const float *buff, uint64_t count, const char* name) { miniaudio.wav_write(buff, count, name); };
 }

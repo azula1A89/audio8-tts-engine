@@ -37,12 +37,12 @@ public:
     MiniAudio& operator=(MiniAudio&&) = default;
     MiniAudio(const MiniAudio&) = delete;
     MiniAudio& operator=(const MiniAudio&) = delete;
-    bool play();
-    void stop();
+    bool play_file(const char* file = "output.WAV");
+    void stop_file();
     std::vector<float> load_audio( const std::string& path );
     void wav_write(const float *buff, uint64_t count, const char* name = "output.WAV");
 
 private:
-    std::unique_ptr<LoopPlayer> player_;
+    std::unique_ptr<LoopPlayer> loop_player_;
     std::unique_ptr<Recoder> recoder_;
 };

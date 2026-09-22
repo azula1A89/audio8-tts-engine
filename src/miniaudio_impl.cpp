@@ -45,7 +45,7 @@ public:
         Beep   // playing 1000Hz triangle wave generation
     };
 
-    LoopPlayer(ma_uint32 sample_rate, float duration_in_seconds = 0.2f)
+    LoopPlayer(const char* file, ma_uint32 sample_rate, float duration_in_seconds = 0.2f)
         : initialized_(false), sample_rate_(sample_rate)
     {
         beep_frames_total_ = (ma_uint64)(duration_in_seconds * sample_rate_);
@@ -53,7 +53,7 @@ public:
         state_ = State::Audio;
 
         ma_decoder_config decoder_config = ma_decoder_config_init(ma_format_f32, 1, sample_rate_);
-        if (ma_decoder_init_file("output.WAV", &decoder_config, &decoder_) != MA_SUCCESS) return;
+        if (ma_decoder_init_file(file, &decoder_config, &decoder_) != MA_SUCCESS) return;
 
         ma_data_source_set_looping(&decoder_, MA_FALSE);
 
@@ -179,22 +179,22 @@ private:
     ma_encoder encoder_;
 };
 
-MiniAudio::MiniAudio() : player_(nullptr), recoder_(nullptr) {};
+MiniAudio::MiniAudio() : loop_player_(nullptr), recoder_(nullptr) {};
 MiniAudio::~MiniAudio(){};
 
-bool MiniAudio::play() {
+bool MiniAudio::play_file(const char* file) {
     bool ret = false;
-    if ( !player_ ) {
-        player_ = make_unique_nothrow<LoopPlayer>(ma_standard_sample_rate_44100, 2.5f);
-        ret = (player_ && player_->initialized());
+    if ( !loop_player_ ) {
+        loop_player_ = make_unique_nothrow<LoopPlayer>(file, ma_standard_sample_rate_44100, 2.5f);
+        ret = (loop_player_ && loop_player_->initialized());
     }
     return ret;
 };
 
-void MiniAudio::stop() {
-    if ( player_ ) {
-        player_->stop();
-        player_.reset();
+void MiniAudio::stop_file() {
+    if ( loop_player_ ) {
+        loop_player_->stop();
+        loop_player_.reset();
     }
 };
 

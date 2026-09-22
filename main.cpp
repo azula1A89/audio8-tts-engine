@@ -38,6 +38,44 @@ models/
     └── codec_encoder_fp16.onnx.data
 )";
 
+class Tracks {
+    int read_idx = 0;
+    std::vector<size_t> index;
+    std::vector<float> data;
+    std::mutex data_mutex;
+public:
+    void add(std::vector<float>& item) {
+        std::lock_guard<std::mutex> lock(data_mutex);
+        index.push_back(data.size());
+        data.insert(data.end(), 
+        std::make_move_iterator(item.begin()), 
+        std::make_move_iterator(item.end()));
+    }
+
+    size_t length() {
+        std::lock_guard<std::mutex> lock(data_mutex);
+        return data.size();
+    }
+
+    size_t size() {
+        std::lock_guard<std::mutex> lock(data_mutex);
+        return index.size();
+    }
+
+    void clear() {
+        std::lock_guard<std::mutex> lock(data_mutex);
+        data.clear();
+        index.clear();
+    }
+
+    void save_to_wav() {
+        if ( data.size() ) {
+            std::lock_guard<std::mutex> lock(data_mutex);
+            miniaudio_impl::wav_write(data.data(), data.size());
+        }
+    }
+};
+
 std::string choose_folder();
 std::string choose_audio_path();
 void imgui_parent_window();
@@ -121,21 +159,21 @@ int main(int argc, char** argv)
     using config_t = std::vector<config_item_s>;
     config_t configs;
 
+    int request_session = 0;
     int request_count = 0;
-    std::vector<std::vector<float>> pcm_data;
-    // std::mutex pcm_data_mutex;
+    Tracks tracks;
 
-    auto progress_total = [&request_count, &pcm_data, &progress](){
+    auto progress_total = [&](){
         float x = 0.0f;
         if ( request_count > 0 ) {
-            x = pcm_data.size();
+            x = tracks.size();
             x /= request_count;
         }
         return x;
     };
 
-    auto is_finished = [&request_count, &pcm_data](){
-        return (request_count == pcm_data.size());
+    auto is_finished = [&](){
+        return (request_count == tracks.size());
     };
 
     // Main loop
@@ -189,10 +227,10 @@ int main(int argc, char** argv)
                 progress = progress_in;
             });
 
-            engine->set_decoder_callback([&pcm_data](std::vector<float> pcm_in){
-                miniaudio_impl::wav_write(pcm_in.data(), pcm_in.size(), 
-                        fmt::format("output_{}.wav", pcm_data.size()+1).c_str());
-                pcm_data.push_back(std::move(pcm_in));
+            engine->set_decoder_callback([&](std::vector<float> pcm_in){
+                
+                tracks.add(pcm_in);
+                tracks.save_to_wav();
             });
 
             // auto preload
@@ -236,8 +274,9 @@ int main(int argc, char** argv)
                     // generate speech
                     if ( ImGui::MenuItem("run") ) {
                         if ( !configs.empty() && is_finished() ) {
+                            request_session++;
                             request_count = 0;
-                            pcm_data.clear();
+                            tracks.clear();
 
                             TTSRequest request{};
                             for (const auto& r : configs) {
@@ -255,11 +294,10 @@ int main(int argc, char** argv)
                     if ( ImGui::MenuItem("cancle") ) {
                         engine->cancel();
                         request_count = 0;
-                        pcm_data.clear();
+                        tracks.clear();
                     }
 
                     {
-                        // imgui_scoped::Disabled disable(!is_finished());
                         if ( ImGui::MenuItem("play") ) {
                             if( !miniaudio_impl::play() ) {
                                 miniaudio_impl::stop();
@@ -390,11 +428,15 @@ int main(int argc, char** argv)
                 imgui_scoped::Disabled disable(!is_finished() || is_segmenting);
 
                 auto sz = ImGui::GetContentRegionAvail();
-                bool changed = ImGui::InputTextMultiline("##text to speak", &txt,
+                static int last_edit_count = -1;
+                static int edit_count = 0;
+                int edited = ImGui::InputTextMultiline("##text to speach", &txt,
                     ImVec2(-FLT_MIN, sz.y * 0.25f), 
                     0);
+                edit_count += edited;
 
-                if( changed ) {
+                if( !is_loading && edit_count != last_edit_count ) {
+                    last_edit_count = edit_count;
                     is_segmenting = true;
                     configs.clear();
                     split_text_status = std::async(std::launch::async, [&txt, &engine, &default_voice](){
@@ -404,8 +446,8 @@ int main(int argc, char** argv)
                 
                 ImGui::BeginChild("##chunk info");
                 {
-                    ImGuiTableColumnFlags table_flags = ImGuiTableFlags_BordersOuter 
-                                    | ImGuiTableFlags_BordersInner 
+                    ImGuiTableColumnFlags table_flags = ImGuiTableFlags_Borders
+                                    | ImGuiTableFlags_ScrollY
                                     | ImGuiTableFlags_RowBg;
                     ImGuiSelectableFlags select_flags = ImGuiSelectableFlags_SpanAllColumns 
                                     | ImGuiSelectableFlags_AllowDoubleClick
@@ -413,18 +455,26 @@ int main(int argc, char** argv)
                     ImGuiTableColumnFlags column_flags = ImGuiTableColumnFlags_WidthFixed;
                     // seq, text, status, options
                     imgui_scoped::Table table("##chunk table", 4, table_flags);
-                    imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {0.0f, 0.0f});
+                    imgui_scoped::StyleVar f_padding(ImGuiStyleVar_FramePadding, {0.0f, 0.0f});
                     imgui_scoped::StyleVar s_txt_align(ImGuiStyleVar_SelectableTextAlign, {0.5f, 0.5f});
-                    imgui_scoped::StyleVar selectable_var(ImGuiStyleVar_SelectableRounding, 12.0f);
+                    imgui_scoped::StyleVar s_var(ImGuiStyleVar_SelectableRounding, 12.0f);
 
                     float ax = ImGui::GetContentRegionAvail().x;
                     ImGui::TableSetupColumn("seq", column_flags, 0.05f * ax);
-                    ImGui::TableSetupColumn("text", column_flags, 0.77f * ax );
-                    ImGui::TableSetupColumn("status", column_flags, 0.08f * ax);
+                    ImGui::TableSetupColumn("text", column_flags, 0.8f * ax );
+                    ImGui::TableSetupColumn("status", column_flags, 0.05f * ax);
                     ImGui::TableSetupColumn("options", column_flags, 0.1f * ax);
-                    ImGui::TableHeadersRow();
+                    ImGui::TableSetupScrollFreeze(0, 1);
+                    ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+                    ImGui::TableSetColumnIndex(0);
+                    imgui_scoped::TableTextCentered("sequence");
+                    ImGui::TableSetColumnIndex(1);
+                    imgui_scoped::TableTextCentered("text segment");
+                    ImGui::TableSetColumnIndex(2);
+                    imgui_scoped::TableTextCentered("status");
+                    ImGui::TableSetColumnIndex(3);
+                    imgui_scoped::TableTextCentered("options");
 
-                    
                     ImGuiListClipper clipper;
                     clipper.Begin(configs.size());
 
@@ -433,10 +483,10 @@ int main(int argc, char** argv)
                     while (clipper.Step()) {
                         for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
                             auto& cfg = configs[i];
-
-                            bool done = ( i < pcm_data.size() );
-                            bool ongoing = ( i == pcm_data.size() );
-                            bool todo = ( i > pcm_data.size() );
+                            size_t num = tracks.size();
+                            bool done = ( i < num );
+                            bool ongoing = ( i == num );
+                            bool todo = ( i > num );
                             bool active = ( request_count > 0 );
                             bool selected = ( ongoing && active );
                                 selected |= ( select_id == cfg.id );
@@ -475,7 +525,6 @@ int main(int argc, char** argv)
 
                             ImGui::TableSetColumnIndex(3);
                             if (ImGui::BeginMenu(cfg.voice.c_str())) {
-
                                 for (const auto& voice : voices ) {
                                     if ( ImGui::MenuItem( voice.c_str(), NULL, cfg.voice == voice) ) {
                                         cfg.voice = voice;
