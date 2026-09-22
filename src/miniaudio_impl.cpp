@@ -200,6 +200,10 @@ void MiniAudio::stop_file() {
     }
 };
 
+bool MiniAudio::is_playing() {
+    return (loop_player_ && loop_player_->initialized());
+}
+
 void MiniAudio::wav_write(const float *buff, uint64_t count, const char* name) {
     if ( !recoder_ ) {
         recoder_ = make_unique_nothrow<Recoder>(name, ma_standard_sample_rate_44100);

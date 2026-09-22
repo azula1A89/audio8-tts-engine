@@ -70,9 +70,12 @@ public:
     }
 
     void save_to_wav() {
+        std::lock_guard<std::mutex> lock(data_mutex);
         if ( data.size() ) {
-            std::lock_guard<std::mutex> lock(data_mutex);
+            bool status = miniaudio_impl::is_playing();
+            if( status ) miniaudio_impl::stop();
             miniaudio_impl::wav_write(data.data(), data.size());
+            if( status ) miniaudio_impl::play();
         }
     }
 };
@@ -372,7 +375,6 @@ int main(int argc, char** argv)
                 }
             }
 
-
             if ( is_loading ) {
                 imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
                 imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
@@ -424,7 +426,7 @@ int main(int argc, char** argv)
             }
 
             // Text input
-            {
+            if( is_initialized ) {
                 imgui_scoped::Font font(cjk);
                 imgui_scoped::Disabled disable(!is_finished() || is_segmenting);
 
@@ -454,7 +456,7 @@ int main(int argc, char** argv)
                                     | ImGuiSelectableFlags_AllowDoubleClick
                                     | ImGuiSelectableFlags_AllowOverlap;
                     ImGuiTableColumnFlags column_flags = ImGuiTableColumnFlags_WidthFixed;
-                    // seq, text, status, options
+
                     imgui_scoped::Table table("##chunk table", 4, table_flags);
                     imgui_scoped::StyleVar f_padding(ImGuiStyleVar_FramePadding, {0.0f, 0.0f});
                     imgui_scoped::StyleVar s_txt_align(ImGuiStyleVar_SelectableTextAlign, {0.5f, 0.5f});
