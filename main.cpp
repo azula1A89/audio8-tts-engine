@@ -261,20 +261,6 @@ int main(int argc, char** argv)
                 imgui_scoped::Disabled disable(is_loading);
                 if (ImGui::BeginMenuBar()) {
 
-                    {   // select voice profile
-                        // imgui_scoped::Disabled disable(!is_finished());
-                        if (ImGui::BeginMenu("voices")) {
-
-                            for (const auto& voice : voices ) {
-                                if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
-                                    default_voice = voice;
-                                }
-                            }
-
-                            ImGui::EndMenu();
-                        }
-                    }
-
                     // generate speech
                     if ( ImGui::MenuItem("run") ) {
                         if ( !configs.empty() && is_finished() ) {
@@ -353,21 +339,36 @@ int main(int argc, char** argv)
                         }
                     }
 
-                    if(ImGui::BeginMenu("theme")) {
-                        for (int i = 0; i< ImGuiTheme::ImGuiTheme_Count; i++) {
-                            imgui_scoped::ID id(i);
-                            auto theme_name = ImGuiTheme::ImGuiTheme_Name((ImGuiTheme::ImGuiTheme_)i);
-                            if ( ImGui::MenuItem(theme_name, NULL, theme == i) ) {
-                                theme = (ImGuiTheme::ImGuiTheme_)i;
-                                float size1 = ImGui::GetStyle().FontSizeBase;
-                                float size2 = ImGui::GetStyle().FontScaleDpi;
-                                float size3 = ImGui::GetStyle().FontScaleMain;
-                                ImGuiTheme::ApplyTweakedTheme(theme);
-                                ImGui::GetStyle().FontSizeBase = size1;
-                                ImGui::GetStyle().FontScaleDpi = size2;
-                                ImGui::GetStyle().FontScaleMain = size3;
+                    if (ImGui::BeginMenu("settings")) {
+                        if (ImGui::BeginMenu("default voice")) {
+
+                            for (const auto& voice : voices ) {
+                                if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
+                                    default_voice = voice;
+                                }
                             }
+
+                            ImGui::EndMenu();
                         }
+
+                        if(ImGui::BeginMenu("theme")) {
+                            for (int i = 0; i< ImGuiTheme::ImGuiTheme_Count; i++) {
+                                imgui_scoped::ID id(i);
+                                auto theme_name = ImGuiTheme::ImGuiTheme_Name((ImGuiTheme::ImGuiTheme_)i);
+                                if ( ImGui::MenuItem(theme_name, NULL, theme == i) ) {
+                                    theme = (ImGuiTheme::ImGuiTheme_)i;
+                                    float size1 = ImGui::GetStyle().FontSizeBase;
+                                    float size2 = ImGui::GetStyle().FontScaleDpi;
+                                    float size3 = ImGui::GetStyle().FontScaleMain;
+                                    ImGuiTheme::ApplyTweakedTheme(theme);
+                                    ImGui::GetStyle().FontSizeBase = size1;
+                                    ImGui::GetStyle().FontScaleDpi = size2;
+                                    ImGui::GetStyle().FontScaleMain = size3;
+                                }
+                            }
+                            ImGui::EndMenu();
+                        }
+                        
                         ImGui::EndMenu();
                     }
 
@@ -427,7 +428,9 @@ int main(int argc, char** argv)
 
             // Text input
             if( is_initialized ) {
-                imgui_scoped::Font font(cjk);
+                static ImFont* editor_font = cjk;
+                
+                imgui_scoped::Font font(editor_font);
                 imgui_scoped::Disabled disable(!is_finished() || is_segmenting);
 
                 auto sz = ImGui::GetContentRegionAvail();
@@ -440,6 +443,7 @@ int main(int argc, char** argv)
 
                 if( !is_loading && edit_count != last_edit_count ) {
                     last_edit_count = edit_count;
+                    editor_font = engine->contains_cjk(txt) ? cjk : english;
                     is_segmenting = true;
                     configs.clear();
                     split_text_status = std::async(std::launch::async, [&txt, &engine, &default_voice](){

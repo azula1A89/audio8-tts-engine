@@ -215,7 +215,9 @@ public:
     void set_decoder_callback(decoder_callback on_pcm_update) {
         on_pcm_update_ = on_pcm_update;
     }
-
+    bool contains_cjk( const std::string& text ) {
+        return prompt_builder_->contains_cjk(text);
+    }
     std::optional<std::vector<std::string>> split_text_by_tokens( const std::string& text, size_t max_tokens ) {
         return prompt_builder_->split_text_by_tokens(text, max_tokens);
     }
@@ -529,6 +531,9 @@ bool Audio8Engine::initialize(const std::filesystem::path& model_dir) {
 bool Audio8Engine::preload_model() { return pImpl->preload_model(); }
 
 void Audio8Engine::uninit() { pImpl->uninit(); }
+bool Audio8Engine::contains_cjk( const std::string& text ) {
+    return pImpl->contains_cjk(text);
+}
 std::optional<std::vector<std::string>> Audio8Engine::split_text_by_tokens( const std::string& text, size_t max_tokens ) {
     return pImpl->split_text_by_tokens(text, max_tokens);
 }

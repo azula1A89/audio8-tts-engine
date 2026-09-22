@@ -67,6 +67,10 @@ public:
         return initialized_;
     }
 
+    bool contains_cjk(const std::string& text) {
+        return text_processor_->contains_cjk(text);
+    }
+
     std::optional<std::vector<std::string>> split_text_by_tokens( const std::string& text, size_t max_tokens ) {
         if ( !initialized_ ) {
             initialized_ = initialize();
@@ -261,6 +265,10 @@ private:
 
 PromptBuilder::PromptBuilder(const std::filesystem::path& tokenizer_dir, int semantic_begin_id, int num_codebooks) : pImpl{ std::make_unique<Impl>( tokenizer_dir, semantic_begin_id, num_codebooks ) } {}
 PromptBuilder::~PromptBuilder() = default;
+
+bool PromptBuilder::contains_cjk(const std::string& text) {
+    return pImpl->contains_cjk(text);
+}
 
 std::optional<std::vector<std::string>> PromptBuilder::split_text_by_tokens( const std::string& text, size_t max_tokens ) {
     return pImpl->split_text_by_tokens(text, max_tokens);

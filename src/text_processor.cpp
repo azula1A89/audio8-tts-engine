@@ -110,6 +110,16 @@ public:
         return sentences;
     }
 
+    // if a string contains any CJK characters, it is considered as CJK text
+    bool contains_cjk(const std::string& text) {
+        std::u32string u32text = utf8_to_utf32(text);
+        for (char32_t c : u32text) {
+            if (is_cjk(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
 private:
 
     std::u32string utf8_to_utf32(const std::string& utf8) {
@@ -246,4 +256,8 @@ std::vector<std::string> TextProcessor::split_into_sentences(const std::string& 
 
 std::string TextProcessor::format_reference_text(const std::string& text) const {
     return pImpl->format_reference_text(text);
+}
+
+bool TextProcessor::contains_cjk(const std::string& text) {
+    return pImpl->contains_cjk(text);
 }

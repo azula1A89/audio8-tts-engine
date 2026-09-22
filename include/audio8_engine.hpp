@@ -208,6 +208,7 @@ public:
     bool initialize(const std::filesystem::path& model_dir = std::filesystem::current_path() / "models");
     bool preload_model();
     void uninit();
+    bool contains_cjk(const std::string& text);
     std::optional<std::vector<std::string>> split_text_by_tokens( const std::string& text, size_t max_tokens );
     void set_progress_callback(progress_callback cb);
     void set_decoder_callback(decoder_callback cb);

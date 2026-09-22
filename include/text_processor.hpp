@@ -42,5 +42,6 @@ public:
     std::vector<std::string> split_into_sentences(const std::string& text);
     std::string clean_text( const std::string& text ) const;
     std::string format_reference_text(const std::string& text) const;
+    bool contains_cjk(const std::string& text);
 };
 

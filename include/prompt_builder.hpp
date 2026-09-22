@@ -55,6 +55,7 @@ public:
     PromptBuilder& operator=(PromptBuilder&&) = default;
     PromptBuilder(const PromptBuilder&) = delete;
     PromptBuilder& operator=(const PromptBuilder&) = delete;
+    bool contains_cjk( const std::string& text );
     std::optional<std::vector<std::string>> split_text_by_tokens( const std::string& text, size_t max_tokens ) ;
     Prompt build( const std::string& target_text, const std::string& transcript, const std::filesystem::path code_file);
     Prompt build( const std::string& target_text, const std::string& transcript, const std::vector<int64_t>& codes);
