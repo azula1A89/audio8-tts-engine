@@ -22,10 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include <fast_ar_generator.hpp>
+#include <map>
 #include <onnxruntime_cxx_api.h>
 #include <fmt/ranges.h>
-#include <map>
+#include <fast_ar_generator.hpp>
 
 
 static const char* input_names[] = {"slow_hidden", "token_id", "use_slow_hidden", "input_pos", "cache_key_0", "cache_value_0", "cache_key_1", "cache_value_1", "cache_key_2", "cache_value_2", "cache_key_3", "cache_value_3"};

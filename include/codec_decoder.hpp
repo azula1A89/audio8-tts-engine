@@ -23,8 +23,8 @@ SOFTWARE.
 */
 
 #pragma once
-#include <audio8_engine.hpp>
 #include <memory>
+#include <audio8_engine.hpp>
 
 class CodecDecoder {
     class Impl;

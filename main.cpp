@@ -1,16 +1,17 @@
+#include "main.hpp"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
-#include <fmt/color.h>
-#include <fmt/ranges.h>
-#include <audio8_engine.hpp>
 #include <imgui_theme.h>
 #include <imgui_stdlib.h>
-#include <future>
-#include "main.hpp"
+#include <fmt/color.h>
+#include <fmt/ranges.h>
 #include <nfd.hpp>
+#include <audio8_engine.hpp>
 #include <text_processor.hpp>
+#include <future>
+#include <mutex>
 
 using namespace std::chrono_literals;
 

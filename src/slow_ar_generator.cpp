@@ -21,11 +21,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-
-#include <slow_ar_generator.hpp>
+#include <map>
 #include <onnxruntime_cxx_api.h>
 #include <fmt/ranges.h>
-#include <map>
+
+#include <slow_ar_generator.hpp>
 
 
 static const char* input_names[] = {"codes", "input_pos", "cache_key_0", "cache_value_0", "cache_key_1", "cache_value_1", "cache_key_2", "cache_value_2", "cache_key_3", "cache_value_3", "cache_key_4", "cache_value_4", "cache_key_5", "cache_value_5", "cache_key_6", "cache_value_6", "cache_key_7", "cache_value_7", "cache_key_8", "cache_value_8", "cache_key_9", "cache_value_9", "cache_key_10", "cache_value_10", "cache_key_11", "cache_value_11", "cache_key_12", "cache_value_12", "cache_key_13", "cache_value_13", "cache_key_14", "cache_value_14", "cache_key_15", "cache_value_15", "cache_key_16", "cache_value_16", "cache_key_17", "cache_value_17", "cache_key_18", "cache_value_18", "cache_key_19", "cache_value_19", "cache_key_20", "cache_value_20", "cache_key_21", "cache_value_21", "cache_key_22", "cache_value_22", "cache_key_23", "cache_value_23"};

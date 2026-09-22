@@ -22,11 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include <voice_manager.hpp>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <fmt/ranges.h>
 #include <onnxruntime_cxx_api.h>
+
+#include <voice_manager.hpp>
 
 using json = nlohmann::json;
 

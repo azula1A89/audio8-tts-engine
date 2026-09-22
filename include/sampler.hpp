@@ -44,6 +44,4 @@ public:
     int sample(const std::vector<float>& logits);
     int sample_semantic(const std::vector<float>& logits,
                         const std::list<int>& previous);
-// private:
-//     std::vector<float> logits_;
 };

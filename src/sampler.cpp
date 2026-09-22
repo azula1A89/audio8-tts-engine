@@ -22,7 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include <sampler.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cfloat>
@@ -31,8 +30,9 @@ SOFTWARE.
 #include <random>
 #include <stdexcept>
 #include <vector>
-#include "audio8_engine.hpp"
 
+#include <audio8_engine.hpp>
+#include <sampler.hpp>
 
 class Sampler::Impl {
 public:

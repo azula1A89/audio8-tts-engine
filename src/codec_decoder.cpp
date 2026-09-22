@@ -22,9 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include <codec_decoder.hpp>
 #include <onnxruntime_cxx_api.h>
 #include <fmt/core.h>
+#include <codec_decoder.hpp>
 
 static const char* input_names[] = { "codes" };
 static const char* output_names[] = {"audio" };

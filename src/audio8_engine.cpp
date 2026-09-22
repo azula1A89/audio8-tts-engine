@@ -22,22 +22,26 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include <audio8_engine.hpp>
-#include <filesystem>
 #include <atomic>
-#include <queue>
-#include <text_processor.hpp>
-#include <prompt_builder.hpp>
-#include <slow_ar_generator.hpp>
-#include <fast_ar_generator.hpp>
-#include <codec_decoder.hpp>
-#include <voice_manager.hpp>
-#include <sampler.hpp>
 #include <array>
-#include <onnxruntime_cxx_api.h>
-#include <fmt/color.h>
-#include <miniaudio_impl.hpp>
+#include <filesystem>
+#include <mutex>
+#include <queue>
 #include <thread>
+
+#include <fmt/color.h>
+#include <onnxruntime_cxx_api.h>
+
+#include <audio8_engine.hpp>
+#include <codec_decoder.hpp>
+#include <fast_ar_generator.hpp>
+#include <miniaudio_impl.hpp>
+#include <prompt_builder.hpp>
+#include <sampler.hpp>
+#include <slow_ar_generator.hpp>
+#include <text_processor.hpp>
+#include <voice_manager.hpp>
+
 
 using namespace std::chrono_literals;
 using CodecFrame = std::array<int64_t, audio8::NUM_CODEBOOKS>;

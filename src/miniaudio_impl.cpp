@@ -22,11 +22,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include <miniaudio_impl.hpp>
+#include <utility>
+
 #include <fmt/core.h>
 #define MINIAUDIO_IMPLEMENTATION
 #include <miniaudio.h>
-#include <utility>
+
+#include <miniaudio_impl.hpp>
 
 template <typename T, typename... Args>
 std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
