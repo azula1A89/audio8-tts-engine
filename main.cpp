@@ -152,6 +152,7 @@ int main(int argc, char** argv)
     bool is_segmenting = false;
     bool is_encoding = false;
 
+    uint32_t segment_max_token = 20;
     float progress = 0.0f;
     float eta = -1.0f;
 
@@ -340,7 +341,15 @@ int main(int argc, char** argv)
                     }
 
                     if (ImGui::BeginMenu("settings")) {
-                        if (ImGui::BeginMenu("default voice")) {
+
+                        if ( ImGui::BeginMenu("segment") ) {
+                            uint32_t step = 1;
+                            ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step);
+                            segment_max_token = std::max(10U, segment_max_token);
+                            ImGui::EndMenu();
+                        }
+
+                        if (ImGui::BeginMenu("voice")) {
 
                             for (const auto& voice : voices ) {
                                 if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
@@ -348,6 +357,11 @@ int main(int argc, char** argv)
                                 }
                             }
 
+                            ImGui::EndMenu();
+                        }
+
+                        if(ImGui::BeginMenu("fonts")) {
+                            ImGui::DragFloat("font scale", &ImGui::GetStyle().FontScaleMain, 0.01f, 0.2f, 3.0f);
                             ImGui::EndMenu();
                         }
 
@@ -429,11 +443,11 @@ int main(int argc, char** argv)
             // Text input
             if( is_initialized ) {
                 static ImFont* editor_font = cjk;
-                
                 imgui_scoped::Font font(editor_font);
                 imgui_scoped::Disabled disable(!is_finished() || is_segmenting);
 
                 auto sz = ImGui::GetContentRegionAvail();
+                static int last_segment_max_token = -1;
                 static int last_edit_count = -1;
                 static int edit_count = 0;
                 int edited = ImGui::InputTextMultiline("##text to speach", &txt,
@@ -441,13 +455,20 @@ int main(int argc, char** argv)
                     0);
                 edit_count += edited;
 
-                if( !is_loading && edit_count != last_edit_count ) {
-                    last_edit_count = edit_count;
-                    editor_font = engine->contains_cjk(txt) ? cjk : english;
-                    is_segmenting = true;
+                bool should_update = (last_edit_count != edit_count);
+                     should_update |= (last_segment_max_token != segment_max_token);
+                     should_update &= !is_loading;
+                     should_update &= !is_segmenting;
+                     
+                if( should_update ) {
                     configs.clear();
-                    split_text_status = std::async(std::launch::async, [&txt, &engine, &default_voice](){
-                        return engine->split_text_by_tokens(txt, 40);
+                    is_segmenting = true;
+                    last_edit_count = edit_count;
+                    last_segment_max_token = segment_max_token;
+                    editor_font = engine->contains_cjk(txt) ? cjk : english;
+
+                    split_text_status = std::async(std::launch::async, [&txt, &engine, &default_voice, &segment_max_token](){
+                        return engine->split_text_by_tokens(txt, segment_max_token);
                     });
                 }
                 
@@ -467,16 +488,16 @@ int main(int argc, char** argv)
                     imgui_scoped::StyleVar s_var(ImGuiStyleVar_SelectableRounding, 12.0f);
 
                     float ax = ImGui::GetContentRegionAvail().x;
-                    ImGui::TableSetupColumn("seq", column_flags, 0.05f * ax);
+                    ImGui::TableSetupColumn("seq", column_flags, 0.04f * ax);
                     ImGui::TableSetupColumn("text", column_flags, 0.8f * ax );
-                    ImGui::TableSetupColumn("status", column_flags, 0.05f * ax);
+                    ImGui::TableSetupColumn("status", column_flags, 0.06f * ax);
                     ImGui::TableSetupColumn("options", column_flags, 0.1f * ax);
                     ImGui::TableSetupScrollFreeze(0, 1);
                     ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
                     ImGui::TableSetColumnIndex(0);
-                    imgui_scoped::TableTextCentered("sequence");
+                    imgui_scoped::TableTextCentered("seq");
                     ImGui::TableSetColumnIndex(1);
-                    imgui_scoped::TableTextCentered("text segment");
+                    imgui_scoped::TableTextCentered(fmt::format("segment: [ {} token limit ]", segment_max_token).c_str());
                     ImGui::TableSetColumnIndex(2);
                     imgui_scoped::TableTextCentered("status");
                     ImGui::TableSetColumnIndex(3);
