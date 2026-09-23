@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include <atomic>
 #include <onnxruntime_cxx_api.h>
 #include <fmt/core.h>
 #include <codec_decoder.hpp>
@@ -32,7 +33,14 @@ static const char* output_names[] = {"audio" };
 class CodecDecoder::Impl {
 public:
     Impl( Ort::Env& env, const std::filesystem::path& path, const RuntimeConfig& config) :
-    env_(env), path_(path), session_(nullptr), initialized_(false), t_per_frame_ms_(0.5) {}
+    env_(env), 
+    path_(path), 
+    session_(nullptr), 
+    initialized_(false), 
+    t_per_frame_ms_(0.5), 
+    run_opts_(), 
+    on_pcm_update_(nullptr), 
+    is_inferencing_(false) {}
     
     bool initialize() {
         Ort::SessionOptions options;
@@ -46,14 +54,38 @@ public:
         return initialized_;
     }
 
+    bool is_running() {
+        return is_inferencing_.load();
+    }
+
+    void terminate() {
+        run_opts_.SetTerminate();
+        if ( on_pcm_update_ ) {
+            std::vector<float> empty;
+            on_pcm_update_(empty);
+        }
+    }
+
     void decode_audio_batch(const std::vector<code_frame>& frames,  decoder_callback cb) {
         if (!initialized_) {
             initialized_ = initialize();
             if (!initialized_) return;
         }
 
+        if ( cb ) {
+            on_pcm_update_ = cb;
+        }
+
         size_t T = frames.size();
-        if (T == 0) return;
+        if (T == 0) {
+            if ( on_pcm_update_ ) {
+                std::vector<float> empty;
+                on_pcm_update_(empty);
+            }
+            return;
+        }
+
+        is_inferencing_.store(true);
 
         // fmt::print("start decode audio. \n\n");
         try {
@@ -76,9 +108,9 @@ public:
                 input.shape.data(),
                 input.shape.size()
             );
-
+            run_opts_.UnsetTerminate();
             std::vector<Ort::Value> output_values = session_->Run(
-                Ort::RunOptions{nullptr}, 
+                run_opts_, 
                 input_names, 
                 &input_value, 
                 1,
@@ -95,8 +127,8 @@ public:
                 sample = std::max(-1.0f, std::min(1.0f, sample));
             }
 
-            if ( cb ) {
-                cb(out);
+            if ( on_pcm_update_ ) {
+                on_pcm_update_(out);
             } else {
                 miniaudio_impl::wav_write(out.data(), out.size());
             }
@@ -105,6 +137,7 @@ public:
             fmt::print("CodecDecoder Batch Error: {}\n", exception.what());
             return;
         }
+        is_inferencing_.store(false);
     }
     
     float estimate_decode_time_ms(size_t T) const {
@@ -151,6 +184,9 @@ private:
     std::unique_ptr<Ort::Session> session_;
     bool initialized_;
     double t_per_frame_ms_;
+    Ort::RunOptions run_opts_;
+    decoder_callback on_pcm_update_;
+    std::atomic<bool> is_inferencing_; 
 };
 
 
@@ -163,6 +199,14 @@ CodecDecoder::CodecDecoder(
 CodecDecoder::~CodecDecoder() = default;
 bool CodecDecoder::init() {
     return pImpl->initialize();
+}
+
+bool CodecDecoder::is_running() {
+    return pImpl->is_running();
+}
+
+void CodecDecoder::terminate() {
+    pImpl->terminate();
 }
 
 void CodecDecoder::decode_audio_batch(const std::vector<code_frame>& frames,  decoder_callback cb) {

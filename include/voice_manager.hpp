@@ -51,6 +51,8 @@ public:
     VoiceManager(const VoiceManager&) = delete;
     VoiceManager& operator=(const VoiceManager&) = delete;
     bool init();
+    bool is_running();
+    void terminate();
     std::vector<std::string> list_voices();
     void registration(std::string voice_name, std::string transcript, std::filesystem::path audio);
     bool load_profile(std::string voice_name, VoiceProfile& profile);

@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include <atomic>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <fmt/ranges.h>
@@ -33,7 +34,13 @@ using json = nlohmann::json;
 
 class VoiceManager::Impl {
 public:
-    Impl( Ort::Env& env, const std::filesystem::path& path, const RuntimeConfig& config) : env_(env), path_(path), session_(nullptr), initialized_(false) { }
+    Impl( Ort::Env& env, const std::filesystem::path& path, const RuntimeConfig& config) : 
+    env_(env), 
+    path_(path), 
+    session_(nullptr), 
+    initialized_(false), 
+    run_opts_(), 
+    is_inferencing_(false) { }
 
     bool initialize() {
         Ort::SessionOptions options;
@@ -44,6 +51,14 @@ public:
         session_ = make_unique_nothrow<Ort::Session>(env_, path_.c_str(), options);
         initialized_ = session_ != nullptr;
         return initialized_;
+    }
+
+    bool is_running() {
+        return is_inferencing_.load();
+    }
+
+    void terminate() {
+        run_opts_.SetTerminate();
     }
 
     void registration(std::string voice_name, std::string transcript, std::filesystem::path audio) {
@@ -196,10 +211,13 @@ private:
             input_shape.data(), 
             input_shape.size());
 
+        is_inferencing_.store(true);
+
         try {
             const char* input_names[] = {"audio"};
             const char* output_names[] = {"codes"};
-            std::vector<Ort::Value> output_values = session_->Run(Ort::RunOptions{nullptr}, input_names, &input_values, 1, output_names, 1);
+            run_opts_.UnsetTerminate();
+            std::vector<Ort::Value> output_values = session_->Run(run_opts_, input_names, &input_values, 1, output_names, 1);
 
             auto codes = output_values[0].GetTensorTypeAndShapeInfo().GetShape()[2];
             auto data = output_values[0].GetTensorMutableData<int64_t>();
@@ -215,6 +233,8 @@ private:
         } catch(const Ort::Exception& exception) {
             fmt::print("{}\n", exception.what());
         }
+
+        is_inferencing_.store(false);
         
         session_.reset();
         initialized_ = false;
@@ -227,6 +247,8 @@ private:
     const std::filesystem::path& path_;
     std::unique_ptr<Ort::Session> session_;
     bool initialized_;
+    Ort::RunOptions run_opts_;
+    std::atomic<bool> is_inferencing_; 
 };
 
 
@@ -239,6 +261,14 @@ VoiceManager::~VoiceManager() = default;
 
 bool VoiceManager::init() {
     return pImpl->initialize();
+}
+
+bool VoiceManager::is_running() {
+    return pImpl->is_running();
+}
+
+void VoiceManager::terminate() {
+    pImpl->terminate();
 }
 
 std::vector<std::string> VoiceManager::list_voices() { return pImpl->list_voices(); };

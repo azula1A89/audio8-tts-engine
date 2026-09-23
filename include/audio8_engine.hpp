@@ -188,6 +188,7 @@ struct TTSRequest
 using codebooks_callback = std::function<void(const int64_t* v, size_t size)>;
 using progress_callback = std::function<void(float progress, float decode_eta)>;
 using decoder_callback = std::function<void(std::vector<float>&)>;
+using decoder_eta_callback = std::function<void(float decode_eta)>;
 
 class Audio8Engine 
 {
@@ -212,7 +213,11 @@ public:
     std::optional<std::vector<std::string>> split_text_by_tokens( const std::string& text, size_t max_tokens );
     void set_progress_callback(progress_callback cb);
     void set_decoder_callback(decoder_callback cb);
+    void set_decoder_eta_callback(decoder_eta_callback cb);
     void push( const TTSRequest& request);
     void synthesize( const TTSRequest& request, progress_callback progress = nullptr, codebooks_callback codebook = nullptr, decoder_callback pcm_callback = nullptr);
     void cancel();
+    bool is_generating();
+    bool is_decoding();
+    bool is_busy();
 };

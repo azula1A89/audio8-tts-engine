@@ -94,6 +94,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imgui)
 
+FetchContent_Declare(
+    imspinner
+    URL https://github.com/dalerank/imspinner/archive/refs/heads/master.zip
+)
+FetchContent_MakeAvailable(imspinner)
+
 if(NOT TARGET imgui)
     
     add_subdirectory(${glew_SOURCE_DIR}/build/cmake)
@@ -113,6 +119,7 @@ if(NOT TARGET imgui)
     target_include_directories(imgui PUBLIC "${imgui_SOURCE_DIR}/misc/cpp")
     target_include_directories(imgui PUBLIC ${glew_SOURCE_DIR}/include)
     target_include_directories(imgui PUBLIC ${glfw_SOURCE_DIR}/include)
+    target_include_directories(imgui PUBLIC ${imspinner_SOURCE_DIR})
     target_include_directories(imgui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/theme)
     target_link_libraries(imgui PUBLIC glew glfw ${OPENGL_LIBRARIES})
 endif()

@@ -12,6 +12,8 @@
 #include <text_processor.hpp>
 #include <future>
 #include <mutex>
+#include <imspinner_compat.h>
+#include <imspinner_text.h>
 
 using namespace std::chrono_literals;
 
@@ -46,6 +48,9 @@ class Tracks {
     std::mutex data_mutex;
 public:
     void add(std::vector<float>& item) {
+        if ( item.empty() ) {
+            return;
+        }
         std::lock_guard<std::mutex> lock(data_mutex);
         index.push_back(data.size());
         data.insert(data.end(), 
@@ -177,10 +182,6 @@ int main(int argc, char** argv)
         return x;
     };
 
-    auto is_finished = [&](){
-        return (request_count == tracks.size());
-    };
-
     // Main loop
     while ( glfwWindowShouldClose(main_window) == GL_FALSE )
     {
@@ -228,14 +229,17 @@ int main(int argc, char** argv)
             if( engine->initialize(paths.root) )// engine initialize
                 is_initialized = true;
 
-            engine->set_progress_callback([&progress, &eta](float progress_in, float eta_in){
+            engine->set_progress_callback([&](float progress_in, float eta_in){
                 progress = progress_in;
             });
 
             engine->set_decoder_callback([&](std::vector<float> pcm_in){
-                
                 tracks.add(pcm_in);
                 tracks.save_to_wav();
+            });
+
+            engine->set_decoder_eta_callback([&](float eta_in){
+                eta = eta_in;
             });
 
             // auto preload
@@ -257,14 +261,15 @@ int main(int argc, char** argv)
             imgui_scoped::Font font(english);
             ImGui::Begin("main", NULL, ImGuiWindowFlags_MenuBar);
             
-            {
+            // Menubar
+            if( is_initialized ) {
                 imgui_scoped::StyleVar item_speacing(ImGuiStyleVar_ItemSpacing, {20.0f, 5.0f});
                 imgui_scoped::Disabled disable(is_loading);
                 if (ImGui::BeginMenuBar()) {
 
                     // generate speech
                     if ( ImGui::MenuItem("run") ) {
-                        if ( !configs.empty() && is_finished() ) {
+                        if ( !configs.empty() && !engine->is_busy() ) {
                             request_session++;
                             request_count = 0;
                             tracks.clear();
@@ -288,6 +293,7 @@ int main(int argc, char** argv)
                         tracks.clear();
                     }
 
+                    // play output.WAV
                     {
                         if ( ImGui::MenuItem("play") ) {
                             if( !miniaudio_impl::play() ) {
@@ -307,6 +313,7 @@ int main(int argc, char** argv)
                         }
                     }
 
+                    // voice registration (voice clone)
                     {
                         imgui_scoped::Disabled disable( is_loading );
                         if (ImGui::MenuItem("registration")) {
@@ -340,46 +347,31 @@ int main(int argc, char** argv)
                         }
                     }
 
+                    // settings
                     if (ImGui::BeginMenu("settings")) {
 
-                        if ( ImGui::BeginMenu("segment") ) {
-                            uint32_t step = 1;
-                            ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step);
-                            segment_max_token = std::max(10U, segment_max_token);
-                            ImGui::EndMenu();
-                        }
+                        if(ImGui::BeginMenu("user interface")) {
 
-                        if (ImGui::BeginMenu("voice")) {
-
-                            for (const auto& voice : voices ) {
-                                if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
-                                    default_voice = voice;
-                                }
-                            }
-
-                            ImGui::EndMenu();
-                        }
-
-                        if(ImGui::BeginMenu("fonts")) {
                             ImGui::DragFloat("font scale", &ImGui::GetStyle().FontScaleMain, 0.01f, 0.2f, 3.0f);
-                            ImGui::EndMenu();
-                        }
 
-                        if(ImGui::BeginMenu("theme")) {
-                            for (int i = 0; i< ImGuiTheme::ImGuiTheme_Count; i++) {
-                                imgui_scoped::ID id(i);
-                                auto theme_name = ImGuiTheme::ImGuiTheme_Name((ImGuiTheme::ImGuiTheme_)i);
-                                if ( ImGui::MenuItem(theme_name, NULL, theme == i) ) {
-                                    theme = (ImGuiTheme::ImGuiTheme_)i;
-                                    float size1 = ImGui::GetStyle().FontSizeBase;
-                                    float size2 = ImGui::GetStyle().FontScaleDpi;
-                                    float size3 = ImGui::GetStyle().FontScaleMain;
-                                    ImGuiTheme::ApplyTweakedTheme(theme);
-                                    ImGui::GetStyle().FontSizeBase = size1;
-                                    ImGui::GetStyle().FontScaleDpi = size2;
-                                    ImGui::GetStyle().FontScaleMain = size3;
+                            if( ImGui::BeginCombo("theme", ImGuiTheme::ImGuiTheme_Name(theme)) ) {
+                                for (int i = 0; i< ImGuiTheme::ImGuiTheme_Count; i++) {
+                                    imgui_scoped::ID id(i);
+                                    
+                                    if(ImGui::Selectable(ImGuiTheme::ImGuiTheme_Name((ImGuiTheme::ImGuiTheme_)i), theme == i)) {
+                                        theme = (ImGuiTheme::ImGuiTheme_)i;
+                                        float size1 = ImGui::GetStyle().FontSizeBase;
+                                        float size2 = ImGui::GetStyle().FontScaleDpi;
+                                        float size3 = ImGui::GetStyle().FontScaleMain;
+                                        ImGuiTheme::ApplyTweakedTheme(theme);
+                                        ImGui::GetStyle().FontSizeBase = size1;
+                                        ImGui::GetStyle().FontScaleDpi = size2;
+                                        ImGui::GetStyle().FontScaleMain = size3;
+                                    }
                                 }
+                                ImGui::EndCombo();
                             }
+
                             ImGui::EndMenu();
                         }
                         
@@ -390,50 +382,22 @@ int main(int argc, char** argv)
                 }
             }
 
+            // "Loading" progress bar
             if ( is_loading ) {
                 imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
                 imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
                 ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Loading..");
             }
 
-            if ( split_text_status.valid() ) {
+            // "Encoding" progress bar
+            if ( is_encoding ) {
                 imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
                 imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
-                ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Segmenting text...");
-
-                if ( split_text_status.wait_for(10ms) == std::future_status::ready ) {
-                    const auto& chunks = split_text_status.get();
-                    if ( chunks.has_value() ) {
-                        TextProcessor processor;
-                        configs.clear();
-                        config_item_s item;
-                        for (int i = 0; i < chunks->size(); i++) {
-                            item.id = i;
-                            item.text = processor.clean_text(chunks.value()[i]);
-                            item.voice = default_voice;
-                            configs.push_back(item);
-                        }
-                    }
-                    split_text_status = {};
-                    is_segmenting = false;
-                }
-            }
-
-            if ( registration_status.valid() ) {
-                imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
-                imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
-                is_encoding = true;
                 ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Encoding..");
-
-                if ( std::future_status::ready == registration_status.wait_for(std::chrono::milliseconds(1)) ) {
-                    registration_status.get();
-                    registration_status = {};
-                    is_encoding = false;
-                    voices = engine->list_voices();
-                }
             }
 
-            if( !is_finished() ){
+            // "Generating" "Total" progress bar
+            if( is_initialized && engine->is_busy() && request_count ){
                 imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
                 imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
                 ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "Generating..");
@@ -443,10 +407,12 @@ int main(int argc, char** argv)
             // Text input
             if( is_initialized ) {
                 static ImFont* editor_font = cjk;
+                bool disable_edit = engine->is_busy() || is_segmenting;
                 imgui_scoped::Font font(editor_font);
-                imgui_scoped::Disabled disable(!is_finished() || is_segmenting);
+                imgui_scoped::Disabled disable(disable_edit);
 
                 auto sz = ImGui::GetContentRegionAvail();
+                static std::string last_default_voice;
                 static int last_segment_max_token = -1;
                 static int last_edit_count = -1;
                 static int edit_count = 0;
@@ -457,14 +423,15 @@ int main(int argc, char** argv)
 
                 bool should_update = (last_edit_count != edit_count);
                      should_update |= (last_segment_max_token != segment_max_token);
+                     should_update |= (last_default_voice != default_voice);
                      should_update &= !is_loading;
                      should_update &= !is_segmenting;
                      
                 if( should_update ) {
-                    configs.clear();
                     is_segmenting = true;
                     last_edit_count = edit_count;
                     last_segment_max_token = segment_max_token;
+                    last_default_voice = default_voice;
                     editor_font = engine->contains_cjk(txt) ? cjk : english;
 
                     split_text_status = std::async(std::launch::async, [&txt, &engine, &default_voice, &segment_max_token](){
@@ -474,7 +441,7 @@ int main(int argc, char** argv)
                 
                 ImGui::BeginChild("##chunk info");
                 {
-                    ImGuiTableColumnFlags table_flags = ImGuiTableFlags_Borders
+                    ImGuiTableColumnFlags table_flags = 0//ImGuiTableFlags_Borders
                                     | ImGuiTableFlags_ScrollY
                                     | ImGuiTableFlags_RowBg;
                     ImGuiSelectableFlags select_flags = ImGuiSelectableFlags_SpanAllColumns 
@@ -485,7 +452,6 @@ int main(int argc, char** argv)
                     imgui_scoped::Table table("##chunk table", 4, table_flags);
                     imgui_scoped::StyleVar f_padding(ImGuiStyleVar_FramePadding, {0.0f, 0.0f});
                     imgui_scoped::StyleVar s_txt_align(ImGuiStyleVar_SelectableTextAlign, {0.5f, 0.5f});
-                    imgui_scoped::StyleVar s_var(ImGuiStyleVar_SelectableRounding, 12.0f);
 
                     float ax = ImGui::GetContentRegionAvail().x;
                     ImGui::TableSetupColumn("seq", column_flags, 0.04f * ax);
@@ -494,24 +460,66 @@ int main(int argc, char** argv)
                     ImGui::TableSetupColumn("options", column_flags, 0.1f * ax);
                     ImGui::TableSetupScrollFreeze(0, 1);
                     ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+
+                    // column 0
                     ImGui::TableSetColumnIndex(0);
                     imgui_scoped::TableTextCentered("seq");
+
+                    // column 1
                     ImGui::TableSetColumnIndex(1);
-                    imgui_scoped::TableTextCentered(fmt::format("segment: [ {} token limit ]", segment_max_token).c_str());
+                    auto str = fmt::format("segment: [ {} token limit ]", segment_max_token);
+                    if(ImGui::Selectable(str.c_str())) {
+                        ImGui::OpenPopup("my_segment_popup");
+                    }
+
+                    if (ImGui::BeginPopup("my_segment_popup")) {
+                        uint32_t step = 1;
+                        ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step);
+                        segment_max_token = std::max(10U, segment_max_token);
+                        ImGui::EndPopup();
+                    }
+
+                    if ( is_segmenting ) {
+                        ImGui::SameLine();
+                        float r = ImGui::GetFrameHeight() * 0.5f;
+                        auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+                        ImSpinner::SpinnerRainbow("rainbow", r, 2.f, color, 8.f);
+                    }
+
+                    // column 2
                     ImGui::TableSetColumnIndex(2);
                     imgui_scoped::TableTextCentered("status");
-                    ImGui::TableSetColumnIndex(3);
-                    imgui_scoped::TableTextCentered("options");
 
+                    // column 3
+                    ImGui::TableSetColumnIndex(3);
+                    if(ImGui::Selectable("option")) {
+                        ImGui::OpenPopup("my_option_popup");
+                    }
+
+                    if (ImGui::BeginPopup("my_option_popup")) {
+                        for (const auto& voice : voices ) {
+                            if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
+                                default_voice = voice;
+                            }
+                        }
+                        ImGui::EndPopup();
+                    }
+
+                    imgui_scoped::StyleVar s_var(ImGuiStyleVar_SelectableRounding, 12.0f);
                     ImGuiListClipper clipper;
                     clipper.Begin(configs.size());
 
                     static int select_id = -1;
                     static int edit_select_id = -1;
+                    size_t num = tracks.size();
+                    if ( disable_edit ) {
+                        select_id = -1;
+                    }
+
                     while (clipper.Step()) {
                         for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
                             auto& cfg = configs[i];
-                            size_t num = tracks.size();
+                            bool idle = ( request_count == 0 );
                             bool done = ( i < num );
                             bool ongoing = ( i == num );
                             bool todo = ( i > num );
@@ -549,7 +557,21 @@ int main(int argc, char** argv)
                             }
 
                             ImGui::TableSetColumnIndex(2);
-                            imgui_scoped::TableTextCentered(done?"done":ongoing?"ongoing":todo?"todo":"...");
+                            if ( !idle && ongoing ) {
+                                ImGui::SameLine();
+                                float r = ImGui::GetFrameHeight() * 0.5f;
+                                auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+                                int arcs = engine->is_decoding()?2:1;
+                                float cell_width = ImGui::GetContentRegionAvail().x;
+                                float offset_x = cell_width* 0.5f - r;
+                                if (offset_x > 0.0f) {
+                                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
+                                }
+                                
+                                ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
+                            } else {
+                                imgui_scoped::TableTextCentered(done?"done":ongoing?"-":todo?"todo":"...");
+                            }
 
                             ImGui::TableSetColumnIndex(3);
                             if (ImGui::BeginMenu(cfg.voice.c_str())) {
@@ -580,9 +602,41 @@ int main(int argc, char** argv)
                 ImGui::EndChild();
             }
 
+            // Check if the text splitting operation has completed
+            if ( split_text_status.valid() ) {
+
+                if ( split_text_status.wait_for(10ms) == std::future_status::ready ) {
+                    const auto& chunks = split_text_status.get();
+                    if ( chunks.has_value() ) {
+                        TextProcessor processor;
+                        configs.clear();
+                        config_item_s item;
+                        for (int i = 0; i < chunks->size(); i++) {
+                            item.id = i;
+                            item.text = processor.clean_text(chunks.value()[i]);
+                            item.voice = default_voice;
+                            configs.push_back(item);
+                        }
+                    }
+                    split_text_status = {};
+                    is_segmenting = false;
+                }
+            }
+
+            // Check if the registration operation has completed
+            if ( registration_status.valid() ) {
+                is_encoding = true;
+
+                if ( std::future_status::ready == registration_status.wait_for(10ms) ) {
+                    registration_status.get();
+                    registration_status = {};
+                    is_encoding = false;
+                    voices = engine->list_voices();
+                }
+            }
+
             ImGui::End();
         }
-
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

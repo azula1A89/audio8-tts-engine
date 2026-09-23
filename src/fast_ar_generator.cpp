@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include <atomic>
 #include <map>
 #include <onnxruntime_cxx_api.h>
 #include <fmt/ranges.h>
@@ -37,7 +38,7 @@ class FastARGenerator::Impl
 public:
 
     Impl( Ort::Env& env, const std::filesystem::path& path, const RuntimeConfig& config) :
-        env_(env), path_(path), session_(nullptr), initialized_(false) {}
+        env_(env), path_(path), session_(nullptr), initialized_(false), run_opts_(), is_inferencing_(false) {}
 
     void reset_kvcache() {
         kv_cache_.clear();
@@ -69,18 +70,28 @@ public:
         return initialized_;
     }
 
+    bool is_running() {
+        return is_inferencing_.load();
+    }
+
+    void terminate() {
+        run_opts_.SetTerminate();
+    }
+
     int generate_next( FastARInput& input, FastAROutput& state) {
         if ( !initialized_ ) {
             initialized_ = initialize();
             if ( !initialized_ ) return -1;
         }
+
+        is_inferencing_.store(true);
         
         try {
             std::vector<Ort::Value> input_values;
             make_input_values( input, input_values);
-
+            run_opts_.UnsetTerminate();
             std::vector<Ort::Value> output_values = session_->Run(
-                Ort::RunOptions{nullptr}, 
+                run_opts_, 
                 input_names, 
                 input_values.data(), 
                 12, 
@@ -94,6 +105,8 @@ public:
             fmt::print("FastARGenerator: {}\n", exception.what());
             return -1;
         }
+
+        is_inferencing_.store(false);
 
         return 0;
     }
@@ -228,6 +241,8 @@ private:
     std::unique_ptr<Ort::Session> session_;
     std::map<std::string, Tensor<Ort::Float16_t>> kv_cache_;
     bool initialized_;
+    Ort::RunOptions run_opts_;
+    std::atomic<bool> is_inferencing_; 
 };
 
 
@@ -241,6 +256,14 @@ FastARGenerator::~FastARGenerator() = default;
 
 bool FastARGenerator::init() {
     return pImpl->initialize();
+}
+
+bool FastARGenerator::is_running() {
+    return pImpl->is_running();
+}
+
+void FastARGenerator::terminate() {
+    pImpl->terminate();
 }
 
 void FastARGenerator::reset_kvcache() {

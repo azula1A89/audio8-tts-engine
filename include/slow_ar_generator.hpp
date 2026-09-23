@@ -42,6 +42,8 @@ public:
     SlowARGenerator(SlowARGenerator&) = delete;
     SlowARGenerator& operator=(const SlowARGenerator&) = delete;
     bool init();
+    bool is_running();
+    void terminate();
     void reset_kvcache();
 
     int generate_next(

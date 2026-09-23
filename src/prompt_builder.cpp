@@ -105,7 +105,11 @@ public:
                     std::vector<int32_t> sub_tokens(sentence_tokens.begin() + i, 
                                                     sentence_tokens.begin() + i + length);
                     std::string sub_text = tokenizer_->Decode(sub_tokens);
-                    chunks.push_back(sub_text);
+                    if ( length == 1 ) {
+                        chunks.back().append(sub_text);
+                    } else {
+                        chunks.push_back(sub_text);
+                    }
                 }
                 continue;
             }

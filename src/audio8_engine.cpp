@@ -71,10 +71,13 @@ private:
     bool loaded_;
     progress_callback on_progress_update_;
     decoder_callback on_pcm_update_;
+    decoder_eta_callback on_decoder_eta_update_;
+    std::atomic_bool is_generating_;
+
     std::jthread generate_thread_;
     std::jthread decoder_thread_;
     std::queue<TTSRequest> request_queue_;
-    std::queue<std::vector<code_frame>> generate_result_queue_;
+    std::queue<std::vector<code_frame>> code_frame_queue_;
     std::mutex request_mutex_;
     std::mutex code_frame_mutex_;
     
@@ -92,7 +95,9 @@ public:
         initialized_(false),
         loaded_(false), 
         on_progress_update_(nullptr),
-        on_pcm_update_(nullptr) {
+        on_pcm_update_(nullptr),
+        on_decoder_eta_update_(nullptr),
+        is_generating_(false) {
             generate_thread_start();
             decoder_thread_start();
         };
@@ -188,13 +193,85 @@ public:
         initialized_ = false;
     }
 
-    void shutdown() {}
+    bool is_voice_manager_running() {
+        if ( voice_manager_ ) {
+            return voice_manager_->is_running();
+        } else {
+            return false;
+        }
+    }
 
-    void cancel() { 
+    bool is_slow_ar_running() {
+        if ( slow_ar_ ) {
+            return slow_ar_->is_running();
+        } else {
+            return false;
+        }
+    }
+
+    bool is_fast_ar_running() {
+        if ( fast_ar_ ) {
+            return fast_ar_->is_running();
+        } else {
+            return false;
+        }
+    }
+    
+    bool is_codec_decoder_running() {
+        if ( codec_decoder_ ) {
+            return codec_decoder_->is_running();
+        } else {
+            return false;
+        }
+    }
+
+    bool is_generating() {
+        return is_generating_.load();
+    }
+
+    bool is_decoding() {
+        if ( codec_decoder_ ) {
+            return codec_decoder_->is_running();
+        } else {
+            return false;
+        }
+    }
+ 
+    bool is_busy() {
+        bool is_busy = is_generating() || is_decoding();
+        {
+            std::lock_guard<std::mutex> lock(request_mutex_);
+            is_busy |= !request_queue_.empty();
+        }
+        {
+            std::lock_guard<std::mutex> lock(code_frame_mutex_);
+            is_busy |= !code_frame_queue_.empty();
+        }
+        return is_busy;
+    }
+
+    void cancel() {
+
         cancel_requested_.store(true);
-        std::lock_guard<std::mutex> lock(request_mutex_);
-        std::queue<TTSRequest> empty;
-        request_queue_.swap(empty);
+        slow_ar_->terminate();
+        fast_ar_->terminate();
+        codec_decoder_->terminate();
+
+        {
+            std::lock_guard<std::mutex> lock(request_mutex_);
+            std::queue<TTSRequest> empty;
+            request_queue_.swap(empty);
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(code_frame_mutex_);
+            std::queue<std::vector<code_frame>> empty;
+            code_frame_queue_.swap(empty);
+        }
+
+        while ( is_busy() ) {
+            std::this_thread::sleep_for(10ms);
+        }
     }
 
     std::vector<std::string> list_voices() {
@@ -215,9 +292,15 @@ public:
     void set_decoder_callback(decoder_callback on_pcm_update) {
         on_pcm_update_ = on_pcm_update;
     }
+
+    void set_decoder_eta_callback(decoder_eta_callback cb) {
+        on_decoder_eta_update_ = cb;
+    }
+
     bool contains_cjk( const std::string& text ) {
         return prompt_builder_->contains_cjk(text);
     }
+
     std::optional<std::vector<std::string>> split_text_by_tokens( const std::string& text, size_t max_tokens ) {
         return prompt_builder_->split_text_by_tokens(text, max_tokens);
     }
@@ -255,15 +338,19 @@ public:
         decoder_thread_ = std::jthread([this](std::stop_token st) {
             std::vector<code_frame> item;
             while ( !st.stop_requested() ) {
-                if ( generate_result_queue_.empty() ) {
+                if ( code_frame_queue_.empty() ) {
                     std::this_thread::sleep_for( 100ms );
                 } else {
                     {
                         std::lock_guard<std::mutex> lock(code_frame_mutex_);
-                        item = std::move(generate_result_queue_.front());
-                        generate_result_queue_.pop();
+                        item = std::move(code_frame_queue_.front());
+                        code_frame_queue_.pop();
                     }
-                    fmt::print("item:{}\n", item.size());
+
+                    if ( on_decoder_eta_update_ ) {
+                        float eta = 1e-3f * codec_decoder_->estimate_decode_time_ms(item.size());
+                        on_decoder_eta_update_(eta);
+                    }
                     codec_decoder_->decode_audio_batch(item, on_pcm_update_);
                 }
             }
@@ -303,6 +390,8 @@ public:
         bool ret = voice_manager_->load_profile(request.voice_name, profile);
         if( !ret ) return;
         
+        is_generating_.store(true);
+
         Prompt prompt = prompt_builder_->build( request.text, profile.transcript, profile.codec_codes);
         progress(0.05f);
 
@@ -322,6 +411,8 @@ public:
 
         for (int step = 0; step < request.max_new_tokens; step++) {
             if ( cancel_requested_.load() ) {
+                progress(1.0f);
+                is_generating_.store(false);
                 return;
             }
 
@@ -329,9 +420,10 @@ public:
             if ( semantic == audio8::IM_END_ID ) {
                 {
                     std::lock_guard<std::mutex> guard(code_frame_mutex_);
-                    generate_result_queue_.push(frames);
+                    code_frame_queue_.push(frames);
                 }
                 progress(1.0f);
+                is_generating_.store(false);
                 return;
             }
             previous.push_back(semantic);
@@ -366,9 +458,10 @@ public:
 
         {
             std::lock_guard<std::mutex> guard(code_frame_mutex_);
-            generate_result_queue_.push(frames);
+            code_frame_queue_.push(frames);
         }
         progress(1.0f);
+        is_generating_.store(false);
     }
 
     void synthesize( const TTSRequest& request, progress_callback progress_cb, codebooks_callback codebook_cb, decoder_callback pcm_callback) {
@@ -543,6 +636,11 @@ void Audio8Engine::set_progress_callback(progress_callback cb) {
 void Audio8Engine::set_decoder_callback(decoder_callback cb) {
     pImpl->set_decoder_callback(cb);
 }
+
+void Audio8Engine::set_decoder_eta_callback(decoder_eta_callback cb) {
+    pImpl->set_decoder_eta_callback(cb);
+}
+
 void Audio8Engine::push( const TTSRequest& request) {
     pImpl->push(request);
 }
@@ -555,3 +653,14 @@ void Audio8Engine::cancel() {
     pImpl->cancel();
 }
 
+bool Audio8Engine::is_generating() {
+    return pImpl->is_generating();
+}
+
+bool Audio8Engine::is_decoding() {
+    return pImpl->is_decoding();
+}
+
+bool Audio8Engine::is_busy() {
+    return pImpl->is_busy();
+}
