@@ -155,14 +155,12 @@ int main(int argc, char** argv)
     std::future<void> engine_status = {};
     std::future<void> registration_status = {};
     std::future<std::optional<std::vector<std::string>>> split_text_status = {};
-    std::future<void> delete_selected_status = {};
     std::future<void> cancle_status = {};
 
     bool is_initialized = false;
     bool is_loading = false;
     bool is_segmenting = false;
     bool is_encoding = false;
-    bool is_deleting = false;
     bool is_cancelling = false;
 
     uint32_t segment_max_token = 20;
@@ -201,12 +199,7 @@ int main(int argc, char** argv)
     };
 
     auto delete_selected = [&configs](){
-        for(config_t::iterator it = configs.begin(); it != configs.end();) {
-            if ( it->selected ) {
-                it = configs.erase(it); 
-            } 
-            else { ++it; }
-        }
+        std::erase_if(configs, [](const auto& item){ return item.selected; });
     };
 
     // Main loop
@@ -435,7 +428,7 @@ int main(int argc, char** argv)
                 }
 
                 {
-                    bool open = is_segmenting || is_deleting || is_cancelling;
+                    bool open = is_segmenting || is_cancelling;
                     if( open ) {
                         if ( !ImGui::IsPopupOpen("my_spinner_popup") ) {
                             ImGui::OpenPopup("my_spinner_popup");
@@ -648,12 +641,9 @@ int main(int argc, char** argv)
                         }
                     }
 
-                    if ( is_delete_down && !is_deleting ) {
-                        is_deleting = true;
+                    if ( is_delete_down ) {
                         last_selected_id = -1;
-                        delete_selected_status = std::async(std::launch::async, [&](){
-                            delete_selected();
-                        });
+                        std::erase_if(configs, [](const auto& item){ return item.selected; });
                     }
                 }
                 ImGui::EndChild();
@@ -667,15 +657,6 @@ int main(int argc, char** argv)
                     request_count = 0;
                     tracks.clear();
                     is_cancelling = false;
-                }
-            }
-
-            // Check if the deletion operation has completed
-            if ( delete_selected_status.valid() ) {
-                if ( delete_selected_status.wait_for(10ms) == std::future_status::ready ) {
-                    delete_selected_status.get();
-                    delete_selected_status = {};
-                    is_deleting = false;
                 }
             }
 
