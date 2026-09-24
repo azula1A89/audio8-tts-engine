@@ -382,26 +382,26 @@ int main(int argc, char** argv)
                 }
             }
 
-            // "Loading" progress bar
-            if ( is_loading ) {
+            // Progress bar
+            {
                 imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
                 imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
-                ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Loading..");
-            }
 
-            // "Encoding" progress bar
-            if ( is_encoding ) {
-                imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
-                imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
-                ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Encoding..");
-            }
+                // "Loading" progress bar
+                if ( is_loading ) {
+                    ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Loading..");
+                }
 
-            // "Generating" "Total" progress bar
-            if( is_initialized && engine->is_busy() && request_count ){
-                imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
-                imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
-                ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "Generating..");
-                ImGui::ProgressBar(progress_total(), ImVec2(-1.0f, 0.0f), "Total..");
+                // "Encoding" progress bar
+                if ( is_encoding ) {
+                    ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Encoding..");
+                }
+
+                // "Generating" "Total" progress bar
+                if( is_initialized && engine->is_busy() && request_count ){
+                    ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "Generating..");
+                    ImGui::ProgressBar(progress_total(), ImVec2(-1.0f, 0.0f), "Total..");
+                }
             }
 
             // Text input
