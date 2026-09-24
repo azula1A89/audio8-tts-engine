@@ -87,7 +87,9 @@ For autoregressive inference, the implementation maintains KV caches in C++ and 
 ```text
 .
 ├── CMakeLists.txt
+├── cli.cpp
 ├── main.cpp
+├── main.hpp
 │
 ├── include/
 │   ├── audio8_engine.hpp
@@ -449,6 +451,7 @@ This project uses the following open-source components:
 - [glew](https://github.com/nigels-com/glew)
 - [glfw](https://github.com/glfw/glfw)
 - [imgui](https://github.com/ocornut/imgui)
+- [imspinner](https://github.com/dalerank/imspinner)
 - [fmt](https://github.com/fmtlib/fmt)
 - [nlohmann/json](https://github.com/nlohmann/json)
 - [miniaudio](https://github.com/mackron/miniaudio)
@@ -472,6 +475,7 @@ Thanks to the authors and maintainers of:
 - glew
 - glfw
 - imgui
+- imspinner
 - fmt
 - nlohmann/json
 - miniaudio
