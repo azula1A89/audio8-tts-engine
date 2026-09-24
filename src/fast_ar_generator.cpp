@@ -61,11 +61,23 @@ public:
     bool initialize() {
         reset_kvcache();
         Ort::SessionOptions options;
-        options.SetGraphOptimizationLevel(
-        GraphOptimizationLevel::ORT_ENABLE_ALL);
-        options.SetIntraOpNumThreads(1);
+        try
+        {
+            OrtCUDAProviderOptions cuda_options{};
+            cuda_options.device_id = 0;
 
-        session_ = make_unique_nothrow<Ort::Session>(env_, path_.c_str(), options);
+            options.AppendExecutionProvider_CUDA(cuda_options);
+
+            session_ = make_unique_nothrow<Ort::Session>(env_, path_.c_str(), options);
+        }
+        catch (const Ort::Exception&)
+        {
+            options.SetGraphOptimizationLevel(
+                GraphOptimizationLevel::ORT_ENABLE_ALL);
+            options.SetIntraOpNumThreads(4);
+
+            session_ = make_unique_nothrow<Ort::Session>(env_, path_.c_str(), options);
+        }
         initialized_ = session_ != nullptr;
         return initialized_;
     }
