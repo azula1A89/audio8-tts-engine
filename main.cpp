@@ -165,6 +165,8 @@ int main(int argc, char** argv)
         int id;
         std::string text;
         std::string voice;
+        bool selected;
+        bool done;
     };
     using config_t = std::vector<config_item_s>;
     config_t configs;
@@ -180,6 +182,19 @@ int main(int argc, char** argv)
             x /= request_count;
         }
         return x;
+    };
+
+    auto unselected_all = [&configs](){ 
+        for (auto& i : configs) { i.selected = false; }
+    };
+
+    auto delete_selected = [&configs](){
+        for(config_t::iterator it = configs.begin(); it != configs.end();) {
+            if ( it->selected ) {
+                it = configs.erase(it); 
+            } 
+            else { ++it; }
+        }
     };
 
     // Main loop
@@ -509,11 +524,14 @@ int main(int argc, char** argv)
                     ImGuiListClipper clipper;
                     clipper.Begin(configs.size());
 
-                    static int select_id = -1;
+                    static int last_selected_id = -1;
                     static int edit_select_id = -1;
                     size_t num = tracks.size();
+
+                    bool is_shift_down = ImGui::IsKeyDown(ImGuiKey_LeftShift);
+                    bool is_delete_down = ImGui::IsKeyDown(ImGuiKey_Delete);
                     if ( disable_edit ) {
-                        select_id = -1;
+                        unselected_all();
                     }
 
                     while (clipper.Step()) {
@@ -525,7 +543,7 @@ int main(int argc, char** argv)
                             bool todo = ( i > num );
                             bool active = ( request_count > 0 );
                             bool selected = ( ongoing && active );
-                                selected |= ( select_id == cfg.id );
+                                selected |= ( cfg.selected );
 
                             if ( ongoing && active ) {
                                 ImGui::SetScrollHereY(0.5f);
@@ -535,16 +553,32 @@ int main(int argc, char** argv)
                             ImGui::TableNextRow();
 
                             ImGui::TableSetColumnIndex(0); 
-                            if(ImGui::Selectable(fmt::format("{}", i).c_str(), selected, select_flags)) {
-                                select_id = cfg.id;
-                            }
-                            if (ImGui::IsItemFocused()) {
-                                if (ImGui::IsMouseDoubleClicked(0)) {
-                                    edit_select_id = select_id;
+                            if(ImGui::Selectable(std::to_string(i).c_str(), selected, select_flags)) {
+                               
+                                if ( is_shift_down ) { // range select
+                                    if( last_selected_id >= 0 ) {
+                                        int start = std::min(last_selected_id, (int)i);
+                                        int end = std::max(last_selected_id, (int)i);
+
+                                        unselected_all();
+                                        for (size_t j = start; j <= end; j++) {
+                                            configs[j].selected = true;
+                                        }
+                                    }
+                                } else {
+                                    last_selected_id = i;
+                                    unselected_all();
+                                    configs[i].selected = true;
                                 }
                             }
 
-                            if ( edit_select_id != select_id ) {
+                            if (ImGui::IsItemFocused()) {
+                                if (ImGui::IsMouseDoubleClicked(0)) {
+                                    edit_select_id = last_selected_id;
+                                }
+                            }
+
+                            if ( edit_select_id != last_selected_id ) {
                                 edit_select_id = -1;
                             }
 
@@ -585,18 +619,9 @@ int main(int argc, char** argv)
                         }
                     }
 
-                    if ( ImGui::IsKeyDown(ImGuiKey_Delete) ) {
-                        if ( select_id >= 0 ) {
-                            for(config_t::iterator it = configs.begin(); it != configs.end();) {
-                                if ( it->id == select_id ) {
-                                    it = configs.erase(it);
-                                    break;
-                                } else {
-                                    ++it;
-                                }
-                            }
-                            select_id = -1;
-                        }
+                    if ( is_delete_down ) {
+                        delete_selected();
+                        last_selected_id = -1;
                     }
                 }
                 ImGui::EndChild();
@@ -615,6 +640,8 @@ int main(int argc, char** argv)
                             item.id = i;
                             item.text = processor.clean_text(chunks.value()[i]);
                             item.voice = default_voice;
+                            item.selected = false;
+                            item.done = false;
                             configs.push_back(item);
                         }
                     }
