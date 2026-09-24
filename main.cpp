@@ -198,10 +198,6 @@ int main(int argc, char** argv)
         for (auto& i : configs) { i.selected = false; }
     };
 
-    auto delete_selected = [&configs](){
-        std::erase_if(configs, [](const auto& item){ return item.selected; });
-    };
-
     // Main loop
     while ( glfwWindowShouldClose(main_window) == GL_FALSE )
     {
