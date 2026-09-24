@@ -138,6 +138,10 @@ int main(int argc, char** argv)
     ImGui_ImplGlfw_InitForOpenGL(main_window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
+    const int popup_spinner_flag = ImGuiWindowFlags_NoDecoration 
+                             | ImGuiWindowFlags_NoMove 
+                             | ImGuiWindowFlags_NoBackground;
+
     Audio8ModelPaths paths{"models"};
     std::string txt = "大家好，我是anthony。";
     std::vector<std::string> voices;
@@ -151,11 +155,15 @@ int main(int argc, char** argv)
     std::future<void> engine_status = {};
     std::future<void> registration_status = {};
     std::future<std::optional<std::vector<std::string>>> split_text_status = {};
+    std::future<void> delete_selected_status = {};
+    std::future<void> cancle_status = {};
 
     bool is_initialized = false;
     bool is_loading = false;
     bool is_segmenting = false;
     bool is_encoding = false;
+    bool is_deleting = false;
+    bool is_cancelling = false;
 
     uint32_t segment_max_token = 20;
     float progress = 0.0f;
@@ -182,6 +190,10 @@ int main(int argc, char** argv)
             x /= request_count;
         }
         return x;
+    };
+
+    auto set_default_voice = [&configs, &default_voice](){ 
+        for (auto& i : configs) { i.voice = default_voice; }
     };
 
     auto unselected_all = [&configs](){ 
@@ -303,9 +315,13 @@ int main(int argc, char** argv)
 
                     // cancle generation
                     if ( ImGui::MenuItem("cancle") ) {
-                        engine->cancel();
-                        request_count = 0;
-                        tracks.clear();
+
+                        if ( !is_cancelling ) {
+                            is_cancelling = true;
+                            cancle_status = std::async(std::launch::async,[&](){
+                                engine->cancel();
+                            });
+                        }
                     }
 
                     // play output.WAV
@@ -417,20 +433,41 @@ int main(int argc, char** argv)
                     ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "Generating..");
                     ImGui::ProgressBar(progress_total(), ImVec2(-1.0f, 0.0f), "Total..");
                 }
+
+                {
+                    bool open = is_segmenting || is_deleting || is_cancelling;
+                    if( open ) {
+                        if ( !ImGui::IsPopupOpen("my_spinner_popup") ) {
+                            ImGui::OpenPopup("my_spinner_popup");
+                        }
+                    }
+
+                    // Always at center
+                    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+                    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+
+                    if (ImGui::BeginPopupModal("my_spinner_popup", &open, popup_spinner_flag)) {
+                        float r = 100;
+                        auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+                        auto size = ImGui::GetContentRegionAvail();
+                        ImGui::SetNextWindowPos({size.x* 0.5f - r, size.y* 0.5f - r});
+                        ImSpinner::SpinnerRainbow("rainbow", r, 2.f, color, 8.f);
+                        ImGui::EndPopup();
+                    }
+                }
             }
 
             // Text input
             if( is_initialized ) {
-                static ImFont* editor_font = cjk;
-                bool disable_edit = engine->is_busy() || is_segmenting;
-                imgui_scoped::Font font(editor_font);
-                imgui_scoped::Disabled disable(disable_edit);
-
-                auto sz = ImGui::GetContentRegionAvail();
-                static std::string last_default_voice;
                 static int last_segment_max_token = -1;
                 static int last_edit_count = -1;
                 static int edit_count = 0;
+                static ImFont* editor_font = cjk;    
+                bool disable_edit = engine->is_busy() || is_segmenting;
+
+                imgui_scoped::Font font(editor_font);
+                imgui_scoped::Disabled disable(disable_edit);
+                auto sz = ImGui::GetContentRegionAvail();
                 int edited = ImGui::InputTextMultiline("##text to speach", &txt,
                     ImVec2(-FLT_MIN, sz.y * 0.25f), 
                     0);
@@ -438,7 +475,6 @@ int main(int argc, char** argv)
 
                 bool should_update = (last_edit_count != edit_count);
                      should_update |= (last_segment_max_token != segment_max_token);
-                     should_update |= (last_default_voice != default_voice);
                      should_update &= !is_loading;
                      should_update &= !is_segmenting;
                      
@@ -446,14 +482,13 @@ int main(int argc, char** argv)
                     is_segmenting = true;
                     last_edit_count = edit_count;
                     last_segment_max_token = segment_max_token;
-                    last_default_voice = default_voice;
                     editor_font = engine->contains_cjk(txt) ? cjk : english;
 
                     split_text_status = std::async(std::launch::async, [&txt, &engine, &default_voice, &segment_max_token](){
                         return engine->split_text_by_tokens(txt, segment_max_token);
                     });
                 }
-                
+
                 ImGui::BeginChild("##chunk info");
                 {
                     ImGuiTableColumnFlags table_flags = 0//ImGuiTableFlags_Borders
@@ -494,13 +529,6 @@ int main(int argc, char** argv)
                         ImGui::EndPopup();
                     }
 
-                    if ( is_segmenting ) {
-                        ImGui::SameLine();
-                        float r = ImGui::GetFrameHeight() * 0.5f;
-                        auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
-                        ImSpinner::SpinnerRainbow("rainbow", r, 2.f, color, 8.f);
-                    }
-
                     // column 2
                     ImGui::TableSetColumnIndex(2);
                     imgui_scoped::TableTextCentered("status");
@@ -515,6 +543,7 @@ int main(int argc, char** argv)
                         for (const auto& voice : voices ) {
                             if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
                                 default_voice = voice;
+                                set_default_voice();
                             }
                         }
                         ImGui::EndPopup();
@@ -619,12 +648,35 @@ int main(int argc, char** argv)
                         }
                     }
 
-                    if ( is_delete_down ) {
-                        delete_selected();
+                    if ( is_delete_down && !is_deleting ) {
+                        is_deleting = true;
                         last_selected_id = -1;
+                        delete_selected_status = std::async(std::launch::async, [&](){
+                            delete_selected();
+                        });
                     }
                 }
                 ImGui::EndChild();
+            }
+
+            // Check if the cancellation operation has completed
+            if ( cancle_status.valid() ) {
+                if ( cancle_status.wait_for(10ms) == std::future_status::ready ) {
+                    cancle_status.get();
+                    cancle_status = {};
+                    request_count = 0;
+                    tracks.clear();
+                    is_cancelling = false;
+                }
+            }
+
+            // Check if the deletion operation has completed
+            if ( delete_selected_status.valid() ) {
+                if ( delete_selected_status.wait_for(10ms) == std::future_status::ready ) {
+                    delete_selected_status.get();
+                    delete_selected_status = {};
+                    is_deleting = false;
+                }
             }
 
             // Check if the text splitting operation has completed

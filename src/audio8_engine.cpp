@@ -238,24 +238,14 @@ public:
     }
  
     bool is_busy() {
-        bool is_busy = is_generating() || is_decoding();
-        {
-            std::lock_guard<std::mutex> lock(request_mutex_);
-            is_busy |= !request_queue_.empty();
-        }
-        {
-            std::lock_guard<std::mutex> lock(code_frame_mutex_);
-            is_busy |= !code_frame_queue_.empty();
-        }
-        return is_busy;
+        return is_generating() || is_decoding();
     }
 
     void cancel() {
-
         cancel_requested_.store(true);
-        slow_ar_->terminate();
-        fast_ar_->terminate();
-        codec_decoder_->terminate();
+        while ( is_busy() ) {
+            std::this_thread::sleep_for(10ms);
+        }
 
         {
             std::lock_guard<std::mutex> lock(request_mutex_);
@@ -268,10 +258,7 @@ public:
             std::queue<std::vector<code_frame>> empty;
             code_frame_queue_.swap(empty);
         }
-
-        while ( is_busy() ) {
-            std::this_thread::sleep_for(10ms);
-        }
+        cancel_requested_.store(false);
     }
 
     std::vector<std::string> list_voices() {
@@ -313,7 +300,7 @@ public:
         generate_thread_ = std::jthread([this](std::stop_token st) {
             TTSRequest item;
             while ( !st.stop_requested() ) {
-                if ( request_queue_.empty() ) {
+                if ( request_queue_.empty() || cancel_requested_.load() ) {
                     std::this_thread::sleep_for( 100ms );
                 } else {
                     {
@@ -338,7 +325,7 @@ public:
         decoder_thread_ = std::jthread([this](std::stop_token st) {
             std::vector<code_frame> item;
             while ( !st.stop_requested() ) {
-                if ( code_frame_queue_.empty() ) {
+                if ( code_frame_queue_.empty() || cancel_requested_.load() ) {
                     std::this_thread::sleep_for( 100ms );
                 } else {
                     {
@@ -352,6 +339,7 @@ public:
                         on_decoder_eta_update_(eta);
                     }
                     codec_decoder_->decode_audio_batch(item, on_pcm_update_);
+                
                 }
             }
         });
@@ -379,8 +367,6 @@ public:
             fmt::print("Models or tokenizer not loaded. \n");
             return;
         }
-
-        cancel_requested_.store(false);
 
         auto progress = [&progress_cb](float p, float eta = -1.0f){
             if (progress_cb) progress_cb(p, eta);
