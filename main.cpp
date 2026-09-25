@@ -7,6 +7,7 @@
 #include <imgui_stdlib.h>
 #include <fmt/color.h>
 #include <fmt/ranges.h>
+#include <fmt/chrono.h>
 #include <nfd.hpp>
 #include <audio8_engine.hpp>
 #include <text_processor.hpp>
@@ -14,6 +15,7 @@
 #include <mutex>
 #include <imspinner_compat.h>
 #include <imspinner_text.h>
+#include <ctime>
 
 using namespace std::chrono_literals;
 
@@ -40,50 +42,6 @@ models/
     ├── codec_encoder_fp16.onnx
     └── codec_encoder_fp16.onnx.data
 )";
-
-class Tracks {
-    int read_idx = 0;
-    std::vector<size_t> index;
-    std::vector<float> data;
-    std::mutex data_mutex;
-public:
-    void add(std::vector<float>& item) {
-        if ( item.empty() ) {
-            return;
-        }
-        std::lock_guard<std::mutex> lock(data_mutex);
-        index.push_back(data.size());
-        data.insert(data.end(), 
-        std::make_move_iterator(item.begin()), 
-        std::make_move_iterator(item.end()));
-    }
-
-    size_t length() {
-        std::lock_guard<std::mutex> lock(data_mutex);
-        return data.size();
-    }
-
-    size_t size() {
-        std::lock_guard<std::mutex> lock(data_mutex);
-        return index.size();
-    }
-
-    void clear() {
-        std::lock_guard<std::mutex> lock(data_mutex);
-        data.clear();
-        index.clear();
-    }
-
-    void save_to_wav() {
-        std::lock_guard<std::mutex> lock(data_mutex);
-        if ( data.size() ) {
-            bool status = miniaudio_impl::is_playing();
-            if( status ) miniaudio_impl::stop();
-            miniaudio_impl::wav_write(data.data(), data.size());
-            if( status ) miniaudio_impl::play();
-        }
-    }
-};
 
 std::string choose_folder();
 std::string choose_audio_path();
@@ -143,12 +101,14 @@ int main(int argc, char** argv)
                              | ImGuiWindowFlags_NoBackground;
 
     Audio8ModelPaths paths{"models"};
+    std::filesystem::path session_root_path = "sessions";
     std::string txt = "大家好，我是anthony。";
     std::vector<std::string> voices;
     std::string default_voice = "anthony";
     std::string new_voice_name;
     std::string transcript;
     std::string ref_audio_path;
+    std::string run_time_str;
 
     std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>();
 
@@ -179,12 +139,11 @@ int main(int argc, char** argv)
 
     int request_session = 0;
     int request_count = 0;
-    Tracks tracks;
 
     auto progress_total = [&](){
         float x = 0.0f;
         if ( request_count > 0 ) {
-            x = tracks.size();
+            x = miniaudio_impl::track_count();
             x /= request_count;
         }
         return x;
@@ -196,6 +155,11 @@ int main(int argc, char** argv)
 
     auto unselected_all = [&configs](){ 
         for (auto& i : configs) { i.selected = false; }
+    };
+
+    auto datetime_str = [](){
+        std::time_t t = std::time(nullptr);
+        return fmt::format("{:%F %T}", fmt::localtime(t));
     };
 
     // Main loop
@@ -250,8 +214,10 @@ int main(int argc, char** argv)
             });
 
             engine->set_decoder_callback([&](std::vector<float> pcm_in){
-                tracks.add(pcm_in);
-                tracks.save_to_wav();
+                auto count = miniaudio_impl::track_count();
+                auto wav_file = session_root_path / run_time_str / fmt::format("{}.wav", count);
+                miniaudio_impl::wav_write(pcm_in.data(), pcm_in.size(), wav_file.c_str());
+                miniaudio_impl::track_add(pcm_in);
             });
 
             engine->set_decoder_eta_callback([&](float eta_in){
@@ -286,9 +252,14 @@ int main(int argc, char** argv)
                     // generate speech
                     if ( ImGui::MenuItem("run") ) {
                         if ( !configs.empty() && !engine->is_busy() ) {
+                            run_time_str = datetime_str();
+                            auto session_path = session_root_path / run_time_str;
+                            if ( !std::filesystem::exists(session_path) ) {
+                                std::filesystem::create_directories(session_path);
+                            }
                             request_session++;
                             request_count = 0;
-                            tracks.clear();
+                            miniaudio_impl::buffer_reset();
 
                             TTSRequest request{};
                             for (const auto& r : configs) {
@@ -313,11 +284,10 @@ int main(int argc, char** argv)
                         }
                     }
 
-                    // play output.WAV
+                    // play tracks
                     {
                         if ( ImGui::MenuItem("play") ) {
                             if( !miniaudio_impl::play() ) {
-                                miniaudio_impl::stop();
                                 ImGui::OpenPopup("my_play_popup");
                             }
                         }
@@ -544,7 +514,7 @@ int main(int argc, char** argv)
 
                     static int last_selected_id = -1;
                     static int edit_select_id = -1;
-                    size_t num = tracks.size();
+                    size_t num = miniaudio_impl::track_count();
 
                     bool is_shift_down = ImGui::IsKeyDown(ImGuiKey_LeftShift);
                     bool is_delete_down = ImGui::IsKeyDown(ImGuiKey_Delete);
@@ -572,7 +542,7 @@ int main(int argc, char** argv)
 
                             ImGui::TableSetColumnIndex(0); 
                             if(ImGui::Selectable(std::to_string(i).c_str(), selected, select_flags)) {
-                               
+                               miniaudio_impl::play(i);
                                 if ( is_shift_down ) { // range select
                                     if( last_selected_id >= 0 ) {
                                         int start = std::min(last_selected_id, (int)i);
@@ -651,7 +621,11 @@ int main(int argc, char** argv)
                     cancle_status.get();
                     cancle_status = {};
                     request_count = 0;
-                    tracks.clear();
+                    auto wav_file = session_root_path / fmt::format("{}.wav", run_time_str);
+                    miniaudio_impl::wav_write(
+                        miniaudio_impl::buffer_ptr(), 
+                        miniaudio_impl::buffer_length(), wav_file.c_str());
+                    
                     is_cancelling = false;
                 }
             }
@@ -707,7 +681,8 @@ int main(int argc, char** argv)
         glfwSwapBuffers(main_window);
 
     }
-    
+    miniaudio_impl::wav_write(miniaudio_impl::buffer_ptr(), miniaudio_impl::buffer_length());
+    miniaudio_impl::buffer_reset();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

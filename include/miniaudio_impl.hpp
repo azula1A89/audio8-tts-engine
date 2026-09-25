@@ -28,7 +28,9 @@ SOFTWARE.
 #include <string>
 
 class MiniAudio {
+    class Tracks;
     class LoopPlayer;
+    class TrackPlayer;
     class Recoder;
 public:
     MiniAudio();
@@ -37,6 +39,16 @@ public:
     MiniAudio& operator=(MiniAudio&&) = default;
     MiniAudio(const MiniAudio&) = delete;
     MiniAudio& operator=(const MiniAudio&) = delete;
+    void track_add(const std::vector<float>& track);
+    void track_delete(int index);
+    size_t track_count();
+    float* buffer_ptr();
+    size_t buffer_length();
+    void buffer_reset();
+    bool play(int index);
+    bool play();
+    bool pause();
+    bool stop();
     bool play_file(const char* file = "output.WAV");
     void stop_file();
     bool is_playing();
@@ -44,6 +56,8 @@ public:
     void wav_write(const float *buff, uint64_t count, const char* name = "output.WAV");
 
 private:
+    std::unique_ptr<Tracks> tracks_;
     std::unique_ptr<LoopPlayer> loop_player_;
+    std::unique_ptr<TrackPlayer> track_player_;
     std::unique_ptr<Recoder> recoder_;
 };

@@ -43,8 +43,19 @@ std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
 }
 
 namespace miniaudio_impl {
-    bool play(const char* file = "output.WAV");
-    void stop();
+    void track_add(const std::vector<float>& track);
+    void track_delete(int index);
+    size_t track_count();
+    float* buffer_ptr();
+    size_t buffer_length();
+    void buffer_reset();
+    bool play(int index);
+    bool play();
+    bool pause();
+    bool stop();
+
+    bool play_file(const char* file = "output.WAV");
+    void stop_file();
     bool is_playing();
     std::vector<float> load_audio( const std::string& path );
     void wav_write(const float *buff, uint64_t count, const char* name = "output.WAV");

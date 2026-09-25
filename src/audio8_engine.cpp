@@ -48,8 +48,18 @@ using CodecFrame = std::array<int64_t, audio8::NUM_CODEBOOKS>;
 
 namespace miniaudio_impl {
     MiniAudio miniaudio;
-    bool play(const char* file) { return miniaudio.play_file(file); }
-    void stop() { miniaudio.stop_file(); }
+    void track_add(const std::vector<float>& track) { miniaudio.track_add(track); }
+    void track_delete(int index) { miniaudio.track_delete(index); }
+    size_t track_count() { return miniaudio.track_count(); }
+    float* buffer_ptr() { return miniaudio.buffer_ptr(); }
+    size_t buffer_length() { return miniaudio.buffer_length(); }
+    void buffer_reset() { miniaudio.buffer_reset(); }
+    bool play(int index) { return miniaudio.play(index); }
+    bool play() { return miniaudio.play(); }
+    bool pause() { return miniaudio.pause(); }
+    bool stop() { return miniaudio.stop(); }
+    bool play_file(const char* file) { return miniaudio.play_file(file); }
+    void stop_file() { miniaudio.stop_file(); }
     bool is_playing() { return miniaudio.is_playing(); }
     std::vector<float> load_audio( const std::string& path ) { return  miniaudio.load_audio(path); };
     void wav_write(const float *buff, uint64_t count, const char* name) { miniaudio.wav_write(buff, count, name); };
