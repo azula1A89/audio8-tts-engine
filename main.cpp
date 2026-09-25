@@ -167,7 +167,7 @@ int main(int argc, char** argv)
 
             auto wav_file = session_root_path / fmt::format("{}.wav", run_time_str);
             if ( !std::filesystem::exists(wav_file) ) {
-                
+
                 miniaudio_impl::wav_write(
                     miniaudio_impl::buffer_ptr(), 
                     miniaudio_impl::buffer_length(), 
@@ -610,14 +610,20 @@ int main(int argc, char** argv)
                             }
 
                             ImGui::TableSetColumnIndex(3);
-                            if (ImGui::BeginMenu(cfg.voice.c_str())) {
-                                for (const auto& voice : voices ) {
-                                    if ( ImGui::MenuItem( voice.c_str(), NULL, cfg.voice == voice) ) {
-                                        cfg.voice = voice;
+                            if ( ImGui::Selectable(cfg.voice.c_str()) ) {
+                                ImGui::OpenPopup("my_voices_popup");
+                            }
+
+                            if (ImGui::BeginPopup("my_voices_popup")) {
+                                for (int m = 0; m < voices.size(); m++) {
+                                    imgui_scoped::ID id(m);
+                                    if ( ImGui::MenuItem( voices[m].c_str(), NULL, cfg.voice == voices[m]) ) {
+                                        cfg.voice = voices[m];
                                     }
                                 }
-                                ImGui::EndMenu();
+                                ImGui::EndPopup();
                             }
+
                         }
                     }
 
