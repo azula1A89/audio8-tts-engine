@@ -162,6 +162,20 @@ int main(int argc, char** argv)
         return fmt::format("{:%F %T}", fmt::localtime(t));
     };
 
+    auto save = [&](){
+        if ( miniaudio_impl::buffer_length() && !run_time_str.empty()) {
+
+            auto wav_file = session_root_path / fmt::format("{}.wav", run_time_str);
+            if ( !std::filesystem::exists(wav_file) ) {
+                
+                miniaudio_impl::wav_write(
+                    miniaudio_impl::buffer_ptr(), 
+                    miniaudio_impl::buffer_length(), 
+                    wav_file.c_str());
+            }
+        }
+    };
+
     // Main loop
     while ( glfwWindowShouldClose(main_window) == GL_FALSE )
     {
@@ -294,7 +308,7 @@ int main(int argc, char** argv)
 
                         imgui_scoped::StyleVar popup_rounding(ImGuiStyleVar_PopupRounding, 6.0f);
                         if (ImGui::BeginPopup("my_play_popup")) {
-                            ImGui::TextColored(ImColor(200,0,0,255), "play failed. check output.WAV");
+                            ImGui::TextColored(ImColor(200,0,0,255), "play failed.");
                             ImGui::EndPopup();
                         }
 
@@ -621,11 +635,7 @@ int main(int argc, char** argv)
                     cancle_status.get();
                     cancle_status = {};
                     request_count = 0;
-                    auto wav_file = session_root_path / fmt::format("{}.wav", run_time_str);
-                    miniaudio_impl::wav_write(
-                        miniaudio_impl::buffer_ptr(), 
-                        miniaudio_impl::buffer_length(), wav_file.c_str());
-                    
+                    save();
                     is_cancelling = false;
                 }
             }
@@ -681,8 +691,8 @@ int main(int argc, char** argv)
         glfwSwapBuffers(main_window);
 
     }
-    miniaudio_impl::wav_write(miniaudio_impl::buffer_ptr(), miniaudio_impl::buffer_length());
-    miniaudio_impl::buffer_reset();
+
+    save();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
