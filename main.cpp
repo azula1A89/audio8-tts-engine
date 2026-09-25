@@ -12,7 +12,6 @@
 #include <audio8_engine.hpp>
 #include <text_processor.hpp>
 #include <future>
-#include <mutex>
 #include <imspinner_compat.h>
 #include <imspinner_text.h>
 #include <ctime>
@@ -159,7 +158,7 @@ int main(int argc, char** argv)
 
     auto datetime_str = [](){
         std::time_t t = std::time(nullptr);
-        return fmt::format("{:%F %T}", fmt::localtime(t));
+        return fmt::format("{:%F_%H-%M-%S}", fmt::localtime(t));
     };
 
     auto save = [&](){
@@ -171,7 +170,7 @@ int main(int argc, char** argv)
                 miniaudio_impl::wav_write(
                     miniaudio_impl::buffer_ptr(), 
                     miniaudio_impl::buffer_length(), 
-                    wav_file.c_str());
+                    wav_file.string().c_str());
             }
         }
     };
@@ -230,7 +229,7 @@ int main(int argc, char** argv)
             engine->set_decoder_callback([&](std::vector<float> pcm_in){
                 auto count = miniaudio_impl::track_count();
                 auto wav_file = session_root_path / run_time_str / fmt::format("{}.wav", count);
-                miniaudio_impl::wav_write(pcm_in.data(), pcm_in.size(), wav_file.c_str());
+                miniaudio_impl::wav_write(pcm_in.data(), pcm_in.size(), wav_file.string().c_str());
                 miniaudio_impl::track_add(pcm_in);
             });
 
