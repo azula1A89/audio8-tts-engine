@@ -416,14 +416,15 @@ int main(int argc, char** argv)
 
                     // Always at center
                     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+                    ImVec2 size = ImGui::GetMainViewport()->WorkSize;
                     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-
                     if (ImGui::BeginPopupModal("my_spinner_popup", &open, popup_spinner_flag)) {
-                        float r = 100;
-                        auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
-                        auto size = ImGui::GetContentRegionAvail();
-                        ImGui::SetNextWindowPos({size.x* 0.5f - r, size.y* 0.5f - r});
+                        
+                        float r = (size.x > size.y ? size.x:size.y) * 0.5f * 0.1f;
+                        if ( r < 10 ) { ImGui::CloseCurrentPopup(); }
+                        auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];                        
                         ImSpinner::SpinnerRainbow("rainbow", r, 2.f, color, 8.f);
+                        
                         ImGui::EndPopup();
                     }
                 }
