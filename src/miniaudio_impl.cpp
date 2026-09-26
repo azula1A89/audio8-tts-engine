@@ -124,6 +124,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         tracks_.clear();
         track_offsets_.clear();
+        total_frames_ = 0;
         cursor_ = 0;
     }
 
