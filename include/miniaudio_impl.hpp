@@ -42,7 +42,8 @@ public:
     void track_add(const std::vector<float>& track);
     void track_delete(int index);
     size_t track_count();
-    float* buffer_ptr();
+    void export_audio();
+    void copy_to_buffer(float* dest, size_t begin, size_t length);
     size_t buffer_length();
     void buffer_reset();
     bool play(int index);

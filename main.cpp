@@ -122,6 +122,10 @@ int main(int argc, char** argv)
     bool is_encoding = false;
     bool is_cancelling = false;
 
+    uint32_t channels = 1;
+    uint32_t max_audio_duration_sec = 1200;
+    uint32_t sample_rate = 44100;
+    uint32_t max_audio_frames = max_audio_duration_sec * sample_rate;
     uint32_t segment_max_token = 20;
     float progress = 0.0f;
     float eta = -1.0f;
@@ -161,16 +165,25 @@ int main(int argc, char** argv)
         return fmt::format("{:%F_%H-%M-%S}", fmt::localtime(t));
     };
 
-    auto save = [&](){
+    auto export_to_file = [&](){
         if ( miniaudio_impl::buffer_length() && !run_time_str.empty()) {
 
-            auto wav_file = session_root_path / fmt::format("{}.wav", run_time_str);
-            if ( !std::filesystem::exists(wav_file) ) {
+            auto folder = session_root_path / run_time_str;
+            if ( std::filesystem::exists(folder) ) {
 
-                miniaudio_impl::wav_write(
-                    miniaudio_impl::buffer_ptr(), 
-                    miniaudio_impl::buffer_length(), 
-                    wav_file.string().c_str());
+                size_t len = miniaudio_impl::buffer_length();
+                int parts = len / max_audio_frames;
+                int final_len = len % max_audio_frames;
+                std::vector<float> buffer;
+                
+                for (int n = 0; n < parts + 1; n++) {
+                    int length = ( n >= parts ) ? final_len : max_audio_frames;
+                    buffer.resize(length);
+                    miniaudio_impl::copy_to_buffer(buffer.data(), n * max_audio_frames, length);
+
+                    auto wav_file = folder / fmt::format("part_{}_{}.wav", n+1, parts+1);
+                    miniaudio_impl::wav_write( buffer.data(), buffer.size(), wav_file.string().c_str());
+                }
             }
         }
     };
@@ -227,9 +240,9 @@ int main(int argc, char** argv)
             });
 
             engine->set_decoder_callback([&](std::vector<float> pcm_in){
-                auto count = miniaudio_impl::track_count();
-                auto wav_file = session_root_path / run_time_str / fmt::format("{}.wav", count);
-                miniaudio_impl::wav_write(pcm_in.data(), pcm_in.size(), wav_file.string().c_str());
+                // auto count = miniaudio_impl::track_count();
+                // auto wav_file = session_root_path / run_time_str / fmt::format("{}.wav", count);
+                // miniaudio_impl::wav_write(pcm_in.data(), pcm_in.size(), wav_file.string().c_str());
                 miniaudio_impl::track_add(pcm_in);
             });
 
@@ -641,7 +654,7 @@ int main(int argc, char** argv)
                     cancle_status.get();
                     cancle_status = {};
                     request_count = 0;
-                    save();
+                    export_to_file();
                     is_cancelling = false;
                 }
             }
@@ -698,7 +711,7 @@ int main(int argc, char** argv)
 
     }
 
-    save();
+    export_to_file();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

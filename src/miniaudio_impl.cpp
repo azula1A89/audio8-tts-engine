@@ -26,6 +26,7 @@ SOFTWARE.
 #include <vector>
 #include <mutex>
 #include <cstring>
+#include <algorithm>
 
 #include <fmt/core.h>
 #define MINIAUDIO_IMPLEMENTATION
@@ -44,11 +45,9 @@ std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
 
 class MiniAudio::Tracks {
 public:
-
-    Tracks(ma_uint32 channels, ma_uint32 sampleRate) 
-        : channels_(channels), sample_rate_(sampleRate), cursor_(0) 
+    Tracks(ma_uint32 channels, ma_uint32 sampleRate)
+        : channels_(channels), sample_tate_(sampleRate), cursor_(0), total_frames_(0)
     {
-        // setup miniaudio custom data source vtable
         static ma_data_source_vtable vtable = {
             read_callback,
             seek_callback,
@@ -62,8 +61,6 @@ public:
         data_source_impl_.parent = this;
         ma_data_source_config config = ma_data_source_config_init();
         config.vtable = &vtable;
-        
-        // init miniaudio ma_data_source_base
         ma_data_source_init(&config, &data_source_impl_.base);
     }
 
@@ -71,41 +68,34 @@ public:
         ma_data_source_uninit(&data_source_impl_.base);
     }
 
-    // ================= buffer management interface =================
-
     void track_add(const std::vector<float>& track) {
+        if (track.empty()) return;
+        
         std::lock_guard<std::mutex> lock(mutex_);
         tracks_.push_back(track);
-        rebuild_buffer_nolock();
+        
+        track_offsets_.push_back(total_frames_);
+        total_frames_ += track.size() / channels_;
     }
 
     void track_delete(int index) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (index >= 0 && index < tracks_.size()) {
+            ma_uint64 deleted_frames = tracks_[index].size() / channels_;
+            
             tracks_.erase(tracks_.begin() + index);
-            rebuild_buffer_nolock();
-        }
-    }
+            track_offsets_.erase(track_offsets_.begin() + index);
+            
+            total_frames_ = 0;
+            for (size_t i = 0; i < tracks_.size(); ++i) {
+                track_offsets_[i] = total_frames_;
+                total_frames_ += tracks_[i].size() / channels_;
+            }
 
-    size_t track_begin_index(int index) {
-        size_t frame_index = 0;
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (index >= 0 && index < tracks_.size()) {
-            for (int i = 0; i < index; i++) {
-                frame_index += tracks_[i].size();
+            if (cursor_ > total_frames_) {
+                cursor_ = total_frames_;
             }
         }
-        return frame_index;
-    }
-
-    double track_duration_sec(int index) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (index >= 0 && index < tracks_.size()) {
-            double count = tracks_[index].size();
-            count /= sample_rate_;
-            return count;
-        }
-        return 0;
     }
 
     size_t track_count() {
@@ -113,98 +103,150 @@ public:
         return tracks_.size();
     }
 
-    float* buffer_ptr() {
+    size_t track_begin_index(int index) {
         std::lock_guard<std::mutex> lock(mutex_);
-        return buffer_.empty() ? nullptr : buffer_.data();
+        if (index >= 0 && index < track_offsets_.size()) {
+            return track_offsets_[index];
+        }
+        return 0;
     }
 
-    size_t buffer_length() {
+    double track_duration_sec(int index) {
         std::lock_guard<std::mutex> lock(mutex_);
-        return buffer_.size(); // return total sample count
+        if (index >= 0 && index < tracks_.size()) {
+            size_t frames = tracks_[index].size() / channels_;
+            return static_cast<double>(frames) / sample_tate_;
+        }
+        return 0.0;
     }
 
     void buffer_reset() {
         std::lock_guard<std::mutex> lock(mutex_);
         tracks_.clear();
-        buffer_.clear();
+        track_offsets_.clear();
         cursor_ = 0;
     }
 
-    // can be used by miniaudio engine...
+    size_t buffer_length() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return total_frames_ * channels_;
+    }
+
+    void copy_to_buffer_offset(float* dest, size_t begin, size_t length) {
+        const ma_uint64 total_samples = total_frames_ * channels_;
+        if (!dest || length == 0 || begin > total_samples ) return;
+
+        size_t begin_track_idx = 0;
+        auto upper_begin = std::upper_bound(track_offsets_.begin(), track_offsets_.end(), begin);
+        if ( upper_begin != track_offsets_.end() ) {
+            begin_track_idx = std::distance(track_offsets_.begin(), upper_begin) - 1;
+        } else {
+            begin_track_idx = tracks_.size() - 1;
+        }
+
+        size_t end_track_idx = 0;
+        auto end = begin + length;
+        end = end > total_samples ? total_samples : end;
+        auto upper_end = std::upper_bound(track_offsets_.begin(), track_offsets_.end(), end);
+        if ( upper_end != track_offsets_.end() ) {
+            end_track_idx = std::distance(track_offsets_.begin(), upper_end) - 1;
+        } else {
+            end_track_idx = tracks_.size() - 1;
+        }
+
+        size_t copied = 0;
+        for (size_t track_idx = begin_track_idx; track_idx <= end_track_idx; ++track_idx) {
+            const auto& track = tracks_[track_idx];
+            size_t start_frame = (track_idx == begin_track_idx) ? (begin - track_offsets_[begin_track_idx]) : 0;
+            size_t end_frame = (track_idx == end_track_idx) ? (end - track_offsets_[track_idx]) : track.size();
+            size_t to_copy = end_frame - start_frame;
+            if (to_copy > 0) {
+                std::memcpy(dest + copied, track.data() + start_frame, to_copy * sizeof(float));
+                copied += to_copy;
+            }
+            if (copied >= length) break;
+        }
+    }
+
     ma_data_source* get_ma_data_source() {
         return (ma_data_source*)&data_source_impl_.base;
     }
 
 private:
-
     struct DataSourceImpl {
-        ma_data_source_base base; // must be first member
+        ma_data_source_base base;
         Tracks* parent;
     } data_source_impl_;
 
     std::mutex mutex_;
     std::vector<std::vector<float>> tracks_;
-    std::vector<float> buffer_; // total flattened buffer
-    ma_uint64 cursor_;          // playback cursor (in PCM frames)
+    std::vector<ma_uint64> track_offsets_;
+    
+    ma_uint64 cursor_;
+    ma_uint64 total_frames_;
     ma_uint32 channels_;
-    ma_uint32 sample_rate_;
+    ma_uint32 sample_tate_;
 
-    // the lock must be acquired before calling
-    void rebuild_buffer_nolock() {
-        buffer_.clear();
-        for (const auto& track : tracks_) {
-            buffer_.insert(buffer_.end(), track.begin(), track.end());
-        }
-        
-        // if deleting a track causes the cursor to exceed the new buffer length, safely reset the cursor.
-        ma_uint64 total_frames = buffer_.size() / channels_;
-        if (cursor_ > total_frames) {
-            cursor_ = total_frames;
-        }
-    }
-
-    // ================= miniaudio callback =================
-
-    static Tracks* get_parent(ma_data_source* pDataSource) {
-        return ((DataSourceImpl*)pDataSource)->parent;
+    static Tracks* get_parent(ma_data_source* p_data_source) {
+        return ((DataSourceImpl*)p_data_source)->parent;
     }
 
     static ma_result read_callback(ma_data_source* p_data_source, void* p_frames_out, ma_uint64 frame_count, ma_uint64* p_frames_read) {
         Tracks* self = get_parent(p_data_source);
         std::lock_guard<std::mutex> lock(self->mutex_);
 
-        ma_uint64 total_frames = self->buffer_.size() / self->channels_;
-        ma_uint64 frames_remaining = (total_frames > self->cursor_) ? (total_frames - self->cursor_) : 0;
-        ma_uint64 frames_to_read = (frame_count < frames_remaining) ? frame_count : frames_remaining;
-
-        if (frames_to_read > 0) {
-            const float* pData = self->buffer_.data() + (self->cursor_ * self->channels_);
-            std::memcpy(p_frames_out, pData, frames_to_read * self->channels_ * sizeof(float));
-            self->cursor_ += frames_to_read;
+        if (self->cursor_ >= self->total_frames_) {
+            if (p_frames_read) *p_frames_read = 0;
+            return MA_AT_END;
         }
 
-        if (p_frames_read != nullptr) {
-            *p_frames_read = frames_to_read;
+        ma_uint64 frames_remaining_to_read = frame_count;
+        float* p_out = static_cast<float*>(p_frames_out);
+        ma_uint64 total_frames_read = 0;
+
+        size_t track_idx = 0;
+        auto upper = std::upper_bound(self->track_offsets_.begin(), self->track_offsets_.end(), self->cursor_);
+
+        if ( upper != self->track_offsets_.end() ) {
+            track_idx = std::distance(self->track_offsets_.begin(), upper) - 1;
+        } else {
+            track_idx = self->tracks_.size() - 1;
+        }
+        
+        while (frames_remaining_to_read > 0 && track_idx < self->tracks_.size()) {
+            ma_uint64 track_start_frame = self->track_offsets_[track_idx];
+            ma_uint64 track_end_frame = track_start_frame + (self->tracks_[track_idx].size() / self->channels_);
+            ma_uint64 offset_in_track = self->cursor_ - track_start_frame;
+            ma_uint64 frames_avail_in_track = track_end_frame - self->cursor_;
+            ma_uint64 frames_to_copy = std::min(frames_remaining_to_read, frames_avail_in_track);
+
+            const float* p_src = self->tracks_[track_idx].data() + (offset_in_track * self->channels_);
+            std::memcpy(p_out, p_src, frames_to_copy * self->channels_ * sizeof(float));
+
+            p_out += frames_to_copy * self->channels_;
+            self->cursor_ += frames_to_copy;
+            total_frames_read += frames_to_copy;
+            frames_remaining_to_read -= frames_to_copy;
+
+            track_idx++;
         }
 
-        return (frames_to_read == frame_count) ? MA_SUCCESS : MA_AT_END;
+        if (p_frames_read) *p_frames_read = total_frames_read;
+        return (total_frames_read == frame_count) ? MA_SUCCESS : MA_AT_END;
     }
 
     static ma_result seek_callback(ma_data_source* p_data_source, ma_uint64 frame_index) {
         Tracks* self = get_parent(p_data_source);
         std::lock_guard<std::mutex> lock(self->mutex_);
-        
-        ma_uint64 total_frames = self->buffer_.size() / self->channels_;
-        self->cursor_ = (frame_index > total_frames) ? total_frames : frame_index;
+        self->cursor_ = (frame_index > self->total_frames_) ? self->total_frames_ : frame_index;
         return MA_SUCCESS;
     }
 
     static ma_result get_data_format_callback(ma_data_source* p_data_source, ma_format* p_format, ma_uint32* p_channels, ma_uint32* p_sample_rate, ma_channel* p_channel_map, size_t channel_map_size) {
         Tracks* self = get_parent(p_data_source);
-        // fix float (ma_format_f32)
         if (p_format) *p_format = ma_format_f32;
         if (p_channels) *p_channels = self->channels_;
-        if (p_sample_rate) *p_sample_rate = self->sample_rate_;
+        if (p_sample_rate) *p_sample_rate = self->sample_tate_;
         return MA_SUCCESS;
     }
 
@@ -218,7 +260,7 @@ private:
     static ma_result get_length_callback(ma_data_source* p_data_source, ma_uint64* p_length) {
         Tracks* self = get_parent(p_data_source);
         std::lock_guard<std::mutex> lock(self->mutex_);
-        if (p_length) *p_length = self->buffer_.size() / self->channels_;
+        if (p_length) *p_length = self->total_frames_;
         return MA_SUCCESS;
     }
 };
@@ -438,11 +480,10 @@ size_t MiniAudio::track_count() {
     return 0;
 }
 
-float* MiniAudio::buffer_ptr() {
+void MiniAudio::copy_to_buffer(float* dest, size_t begin, size_t length) {
     if ( tracks_ ) {
-        return tracks_->buffer_ptr();
+        tracks_->copy_to_buffer_offset(dest, begin, length);
     }
-    return nullptr;
 }
 
 size_t MiniAudio::buffer_length() {

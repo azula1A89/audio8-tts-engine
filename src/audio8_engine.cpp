@@ -51,7 +51,7 @@ namespace miniaudio_impl {
     void track_add(const std::vector<float>& track) { miniaudio.track_add(track); }
     void track_delete(int index) { miniaudio.track_delete(index); }
     size_t track_count() { return miniaudio.track_count(); }
-    float* buffer_ptr() { return miniaudio.buffer_ptr(); }
+    void copy_to_buffer(float* dest, size_t begin, size_t length) { miniaudio.copy_to_buffer(dest, begin, length); };
     size_t buffer_length() { return miniaudio.buffer_length(); }
     void buffer_reset() { miniaudio.buffer_reset(); }
     bool play(int index) { return miniaudio.play(index); }
