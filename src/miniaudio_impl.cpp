@@ -218,8 +218,8 @@ private:
             ma_uint64 track_end_frame = track_start_frame + (self->tracks_[track_idx].size() / self->channels_);
             ma_uint64 offset_in_track = self->cursor_ - track_start_frame;
             ma_uint64 frames_avail_in_track = track_end_frame - self->cursor_;
-            ma_uint64 frames_to_copy = std::min(frames_remaining_to_read, frames_avail_in_track);
-
+            ma_uint64 frames_to_copy = frames_remaining_to_read < frames_avail_in_track? frames_remaining_to_read : frames_avail_in_track;
+            
             const float* p_src = self->tracks_[track_idx].data() + (offset_in_track * self->channels_);
             std::memcpy(p_out, p_src, frames_to_copy * self->channels_ * sizeof(float));
 
