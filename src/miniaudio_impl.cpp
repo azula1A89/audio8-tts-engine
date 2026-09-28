@@ -307,6 +307,10 @@ public:
         ma_engine_uninit(&engine_);
     }
 
+    bool is_playing() {
+        return ma_sound_is_playing(&sound_);
+    }
+
     bool play() {
         bool ret = (MA_SUCCESS == ma_sound_seek_to_pcm_frame(&sound_, 0));
         return (MA_SUCCESS == ma_sound_start(&sound_));
@@ -571,7 +575,11 @@ void MiniAudio::stop_file() {
     }
 };
 
-bool MiniAudio::is_playing() {
+bool MiniAudio::is_playing_list() {
+    return track_player_->is_playing();
+}
+
+bool MiniAudio::is_playing_file() {
     return (loop_player_ && loop_player_->initialized());
 }
 

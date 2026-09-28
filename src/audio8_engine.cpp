@@ -58,7 +58,8 @@ namespace miniaudio_impl {
     };
     bool play_file(const char* file) { return miniaudio.play_file(file); }
     void stop_file() { miniaudio.stop_file(); }
-    bool is_playing() { return miniaudio.is_playing(); }
+    bool is_playing_file() { return miniaudio.is_playing_file(); }
+    bool is_playing_list() { return miniaudio.is_playing_list(); };
     std::vector<float> load_audio( const std::string& path ) { return  miniaudio.load_audio(path); };
     void wav_write(const float *buff, uint64_t count, const char* name) { miniaudio.wav_write(buff, count, name); };
 }

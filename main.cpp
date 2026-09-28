@@ -139,7 +139,7 @@ public:
         }
     }
 
-    bool playlist_start() {
+    bool start_playlist() {
         miniaudio_impl::play();
         return true;
     }
@@ -152,7 +152,11 @@ public:
         miniaudio_impl::stop();
     }
 
-    bool play(int idx) {
+    bool is_playing_list() {
+        return miniaudio_impl::is_playing_list();
+    }
+
+    bool play_id(int idx) {
         size_t count = track_count();
         if ( count == 0 || idx < 0 || idx > count ) return false;
 
@@ -163,6 +167,10 @@ public:
 
     void stop_file() {
         miniaudio_impl::stop_file();
+    }
+
+    bool is_playing_file() {
+        return miniaudio_impl::is_playing_file();
     }
 
     // save PCM data to a wav file
@@ -492,10 +500,9 @@ int main(int argc, char** argv)
 
                     {
                         imgui_scoped::Disabled disable(session == nullptr);
-
-                        {
-                            imgui_scoped::Disabled disable(engine->is_busy());
-                            if ( ImGui::MenuItem("run") ) {
+                        std::string status_text = engine->is_busy() ? "cancle" : "run";
+                        if ( ImGui::MenuItem(status_text.c_str()) ) {
+                            if ( !engine->is_busy() ) {
                                 request_done.store(0);
                                 session->request_count() = 0;
 
@@ -509,13 +516,7 @@ int main(int argc, char** argv)
                                     engine->push(request);
                                     session->request_count()++;
                                 }
-                            }
-                        }
-
-                        {
-                            imgui_scoped::Disabled disable(!engine->is_busy());
-                            if ( ImGui::MenuItem("cancle") ) {
-
+                            } else {
                                 if ( !is_cancelling ) {
                                     is_cancelling = true;
                                     cancle_status = std::async(std::launch::async,[&](){
@@ -527,21 +528,13 @@ int main(int argc, char** argv)
 
                         // play tracks
                         {
-                            if ( ImGui::MenuItem("play") ) {
-                                if( !session->playlist_start() ) {
-                                    ImGui::OpenPopup("my_play_popup");
-                                }
-                            }
-
-                            if (ImGui::BeginPopup("my_play_popup")) {
-                                ImGui::TextColored(ImColor(200,0,0,255), "play failed.");
-                                ImGui::EndPopup();
-                            }
-
-                            if ( ImGui::MenuItem("stop") ) {
-                                if ( session ) {
+                            imgui_scoped::Disabled disable( session->is_playing_file() );
+                            std::string status_txt = session->is_playing_list() ? "stop":"play";
+                            if ( ImGui::MenuItem(status_txt.c_str()) ) {
+                                if( !session->is_playing_list() ) {
+                                    session->start_playlist();
+                                } else {
                                     session->stop_playlist();
-                                    session->stop_file();
                                 }
                             }
                         }
@@ -814,7 +807,7 @@ int main(int argc, char** argv)
 
                             ImGui::TableSetColumnIndex(0); 
                             if(ImGui::Selectable(std::to_string(cfg.id).c_str(), selected, select_flags)) {
-                                session->play(cfg.id);
+                                session->play_id(cfg.id);
                                 if ( is_shift_down ) { // range select
                                     if( last_selected_seq >= 0 ) {
                                         int start = std::min(last_selected_seq, (int)seq);

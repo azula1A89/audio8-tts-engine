@@ -50,7 +50,8 @@ public:
     bool stop();
     bool play_file(const char* file = "output.WAV");
     void stop_file();
-    bool is_playing();
+    bool is_playing_file();
+    bool is_playing_list();
     std::vector<float> load_audio( const std::string& path );
     void wav_write(const float *buff, uint64_t count, const char* name = "output.WAV");
 
