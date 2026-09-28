@@ -135,7 +135,7 @@ public:
 
         std::sort(paths.begin(), paths.end());
         for (const auto& p : paths) {
-            miniaudio_impl::track_add(p);
+            miniaudio_impl::track_add(p.string());
         }
     }
 
@@ -178,7 +178,7 @@ public:
         auto wav_file = root_ / cache_ / fmt::format("{:05}.wav", id);
         miniaudio_impl::wav_write(track.data(), track.size(), wav_file.string().c_str());
         track_count_ = track_count();
-        miniaudio_impl::track_add(wav_file);
+        miniaudio_impl::track_add(wav_file.string());
         std::lock_guard<std::mutex> guard(done_mutex_);
         done_.push(id);
     };
