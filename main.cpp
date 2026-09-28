@@ -307,7 +307,7 @@ int main(int argc, char** argv)
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / 
+    // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / 
     
     ImGuiTheme::ImGuiTheme_ theme = ImGuiTheme::ImGuiTheme_ImGuiColorsClassic;
     ImGuiTheme::ApplyTweakedTheme(theme);
@@ -778,6 +778,7 @@ int main(int argc, char** argv)
                     ImGuiListClipper clipper;
                     clipper.Begin(session->configs().size());
 
+                    static int last_playing_id = -1;
                     static int last_selected_seq = -1;
                     static int edit_select_id = -1;
                     size_t num = session->track_count();
@@ -807,7 +808,20 @@ int main(int argc, char** argv)
 
                             ImGui::TableSetColumnIndex(0); 
                             if(ImGui::Selectable(std::to_string(cfg.id).c_str(), selected, select_flags)) {
-                                session->play_id(cfg.id);
+
+                                //toggle play
+                                if ( !session->is_playing_file() ) {
+                                    session->play_id(cfg.id);
+                                    last_playing_id = cfg.id;
+                                } else if(last_playing_id == cfg.id) {
+                                    session->stop_file();
+                                    last_playing_id = -1;
+                                } else {
+                                    session->stop_file();
+                                    session->play_id(cfg.id);
+                                    last_playing_id = cfg.id;
+                                }
+
                                 if ( is_shift_down ) { // range select
                                     if( last_selected_seq >= 0 ) {
                                         int start = std::min(last_selected_seq, (int)seq);
