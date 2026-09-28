@@ -15,9 +15,13 @@
 #include <imspinner_compat.h>
 #include <imspinner_text.h>
 #include <ctime>
+#include <nlohmann/json.hpp>
+#include <fstream>
+#include <queue>
+#include <mutex>
 
 using namespace std::chrono_literals;
-
+using json = nlohmann::json;
 const char* model_info = "This project using the following model:";
 const char* model_url = "https://huggingface.co/Edge0/Audio8-TTS-Preview-0.6B-ONNX-INT4/tree/main";
 const char* model_folder = R"(
@@ -41,6 +45,195 @@ models/
     ├── codec_encoder_fp16.onnx
     └── codec_encoder_fp16.onnx.data
 )";
+
+class Session {
+public:
+    struct config_item_s {
+        int id; 
+        std::string text;
+        std::string voice;
+        bool selected;
+        bool done;
+    };
+
+private:
+    std::filesystem::path root_;
+    std::string cache_;
+    size_t track_count_;
+    size_t request_count_;
+    std::vector<config_item_s> configs_;
+    std::queue<int> done_;
+    std::mutex done_mutex_;
+
+public:
+    Session(std::filesystem::path root = "sessions", 
+        std::string cache = fmt::format("{:%F_%H-%M-%S}", fmt::localtime(std::time(nullptr))), 
+        size_t track_count = 0) :
+        root_(root), cache_(cache), track_count_(track_count), request_count_(0) {
+        auto cache_path = root_ / cache_;
+        if ( !std::filesystem::exists(cache_path) ) {
+            std::filesystem::create_directories(cache_path);
+        }
+    };
+
+    ~Session() {
+        stop();
+        save();
+    }
+
+    static std::unique_ptr<Session> from_json(std::filesystem::path json_file) {
+        std::ifstream ifs(json_file, std::ios::binary);
+        if (!ifs.is_open()) {
+            return nullptr;
+        }
+        json j;
+        ifs >> j;
+        ifs.close();
+
+        auto session = std::make_unique<Session>(j["root"], j["cache"], j["track_count"]);
+        for (const auto& cfg : j["configs"]) {
+            Session::config_item_s config;
+            config.id = cfg["id"];
+            config.text = cfg["text"];
+            config.voice = cfg["voice"];
+            config.selected = cfg["selected"];
+            config.done = cfg["done"];
+            session->configs().push_back(config);
+        }
+        return session;
+    }
+
+    size_t& request_count() {
+        return request_count_;
+    }
+    
+    std::vector<config_item_s>& configs() {
+        return configs_;
+    }
+
+    bool play() {
+
+        return true;
+    }
+
+    bool play(int idx) {
+        size_t count = track_count();
+        if ( count == 0 || idx < 0 || idx > count ) return false;
+
+        auto wav_file = root_ / cache_ / fmt::format("{:05}.wav", idx);
+        miniaudio_impl::stop_file();
+        return miniaudio_impl::play_file(wav_file.string().c_str());
+    }
+
+    void stop() {
+        miniaudio_impl::stop_file();
+    }
+
+    // save PCM data to a wav file
+    void save_to_wav(const std::vector<float> &track, const int& id) {
+        auto wav_file = root_ / cache_ / fmt::format("{:05}.wav", id);
+        miniaudio_impl::wav_write(track.data(), track.size(), wav_file.string().c_str());
+        track_count_ = track_count();
+        
+        std::lock_guard<std::mutex> guard(done_mutex_);
+        done_.push(id);
+    };
+    
+    size_t track_count() {
+        auto cache_path = root_ / cache_;
+        if (!std::filesystem::exists(cache_path) || !std::filesystem::is_directory(cache_path)) {
+            return 0;
+        }
+
+        std::size_t count = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(cache_path)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".wav") {
+                count++;
+            }
+        }
+        return count;
+    };
+
+    void refresh_status() {
+
+        // random done status update
+        int id = -1;
+        {
+            std::lock_guard<std::mutex> guard(done_mutex_);
+            if ( !done_.empty() ) {
+                id = done_.front();
+                done_.pop();
+            }
+        }
+
+        if ( id >= 0 ) {
+            set_is_done(id);
+        }
+    }
+
+    void set_is_done(const int& id) {
+        auto search = std::find_if(configs_.begin(), configs_.end(), [&id](const config_item_s& item){ return item.id == id; });
+        if ( search != configs_.end() ) {
+            search->done = true;
+        }
+    }
+
+    void set_done_value(bool v) {
+        for (auto& i : configs_) { i.done = v; }
+    }
+
+    void set_default_voice (const std::string& default_voice){ 
+        for (auto& i : configs_) { i.voice = default_voice; }
+    };
+
+    void unselected_all() { 
+        for (auto& i : configs_) { i.selected = false; }
+    };
+
+    void delete_selected() {
+        std::erase_if(configs_, [](const auto& item){ return item.selected; });
+    }
+
+    float progress() {
+        float x = 0.0f;
+        float request_count = configs_.size();
+        if ( request_count > 0 ) {
+            x = track_count_;
+            x /= request_count;
+        }
+        return x;
+    }
+
+    // save configs to session root folder, as {runtime_str_}.json
+    void save() {
+        json save;
+        save["root"] = root_;
+        save["cache"] = cache_;
+        save["track_count"] = track_count();
+        save["configs"] = json::array();
+        for (size_t i = 0; i < configs_.size(); ++i) {
+            const auto& config = configs_[i];
+            json cfg;
+            cfg["id"] = config.id;
+            cfg["text"] = config.text;
+            cfg["voice"] = config.voice;
+            cfg["selected"] = config.selected;
+            cfg["done"] = config.done;
+            save["configs"].push_back(cfg);
+        }
+
+        if (!save.empty()) {
+            try{
+                auto json_file = root_ / fmt::format("{}.json", cache_);
+                std::ofstream ostrm(json_file, std::ios::binary);
+                ostrm.write(save.dump(4).c_str(), save.dump(4).size());
+            }catch(const std::exception& e){
+                fmt::print("while save:{}\n", e.what());
+            }
+        }
+    }
+
+};
 
 std::string choose_folder();
 std::string choose_audio_path();
@@ -69,8 +262,6 @@ int main(int argc, char** argv)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / 
     
@@ -107,10 +298,9 @@ int main(int argc, char** argv)
     std::string new_voice_name;
     std::string transcript;
     std::string ref_audio_path;
-    std::string run_time_str;
 
     std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>();
-
+    std::unique_ptr<Session> session = nullptr;
     std::future<void> engine_status = {};
     std::future<void> registration_status = {};
     std::future<std::optional<std::vector<std::string>>> split_text_status = {};
@@ -127,66 +317,11 @@ int main(int argc, char** argv)
     uint32_t sample_rate = 44100;
     uint32_t max_audio_frames = max_audio_duration_sec * sample_rate;
     uint32_t segment_max_token = 20;
-    float progress = 0.0f;
-    float eta = -1.0f;
-
-    struct config_item_s {
-        int id;
-        std::string text;
-        std::string voice;
-        bool selected;
-        bool done;
-    };
-    using config_t = std::vector<config_item_s>;
-    config_t configs;
-
+    float generate_progress = 0.0f;
+    int generate_id = -1;
+    int decode_id = -1;
+    float decode_eta = -1.0f;
     int request_session = 0;
-    int request_count = 0;
-
-    auto progress_total = [&](){
-        float x = 0.0f;
-        if ( request_count > 0 ) {
-            x = miniaudio_impl::track_count();
-            x /= request_count;
-        }
-        return x;
-    };
-
-    auto set_default_voice = [&configs, &default_voice](){ 
-        for (auto& i : configs) { i.voice = default_voice; }
-    };
-
-    auto unselected_all = [&configs](){ 
-        for (auto& i : configs) { i.selected = false; }
-    };
-
-    auto datetime_str = [](){
-        std::time_t t = std::time(nullptr);
-        return fmt::format("{:%F_%H-%M-%S}", fmt::localtime(t));
-    };
-
-    auto export_to_file = [&](){
-        if ( miniaudio_impl::buffer_length() && !run_time_str.empty()) {
-
-            auto folder = session_root_path / run_time_str;
-            if ( std::filesystem::exists(folder) ) {
-
-                size_t len = miniaudio_impl::buffer_length();
-                int parts = len / max_audio_frames;
-                int final_len = len % max_audio_frames;
-                std::vector<float> buffer;
-                
-                for (int n = 0; n < parts + 1; n++) {
-                    int length = ( n >= parts ) ? final_len : max_audio_frames;
-                    buffer.resize(length);
-                    miniaudio_impl::copy_to_buffer(buffer.data(), n * max_audio_frames, length);
-
-                    auto wav_file = folder / fmt::format("part_{}_{}.wav", n+1, parts+1);
-                    miniaudio_impl::wav_write( buffer.data(), buffer.size(), wav_file.string().c_str());
-                }
-            }
-        }
-    };
 
     // Main loop
     while ( glfwWindowShouldClose(main_window) == GL_FALSE )
@@ -235,19 +370,18 @@ int main(int argc, char** argv)
             if( engine->initialize(paths.root) )// engine initialize
                 is_initialized = true;
 
-            engine->set_progress_callback([&](float progress_in, float eta_in){
-                progress = progress_in;
+            engine->set_generate_callback([&](float progress_in, int id_in){
+                generate_progress = progress_in;
+                generate_id = id_in;
             });
 
-            engine->set_decoder_callback([&](std::vector<float> pcm_in){
-                // auto count = miniaudio_impl::track_count();
-                // auto wav_file = session_root_path / run_time_str / fmt::format("{}.wav", count);
-                // miniaudio_impl::wav_write(pcm_in.data(), pcm_in.size(), wav_file.string().c_str());
-                miniaudio_impl::track_add(pcm_in);
+            engine->set_decoder_callback([&](std::vector<float> pcm_in, const int id_in){
+                if( session ) session->save_to_wav(pcm_in, id_in);
             });
 
-            engine->set_decoder_eta_callback([&](float eta_in){
-                eta = eta_in;
+            engine->set_decoder_eta_callback([&](float eta_in, const int id_in){
+                decode_eta = eta_in;
+                decode_id = id_in;
             });
 
             // auto preload
@@ -264,6 +398,10 @@ int main(int argc, char** argv)
             voices = engine->list_voices();
         }
 
+        if ( session ) {
+            session->refresh_status();
+        }
+
         // main window
         {
             imgui_scoped::Font font(english);
@@ -275,60 +413,89 @@ int main(int argc, char** argv)
                 imgui_scoped::Disabled disable(is_loading);
                 if (ImGui::BeginMenuBar()) {
 
-                    // generate speech
-                    if ( ImGui::MenuItem("run") ) {
-                        if ( !configs.empty() && !engine->is_busy() ) {
-                            run_time_str = datetime_str();
-                            auto session_path = session_root_path / run_time_str;
-                            if ( !std::filesystem::exists(session_path) ) {
-                                std::filesystem::create_directories(session_path);
+                   {
+                        imgui_scoped::Disabled disable(engine->is_busy());
+                        if (ImGui::BeginMenu("session")) {
+                            if ( ImGui::MenuItem("new") ) {
+                                if ( session ) {
+                                    session.reset(nullptr);
+                                }
+                                session = make_unique_nothrow<Session>();
                             }
-                            request_session++;
-                            request_count = 0;
-                            miniaudio_impl::buffer_reset();
 
-                            TTSRequest request{};
-                            for (const auto& r : configs) {
-
-                                request.text = r.text;
-                                request.voice_name = r.voice;
-                                request.max_new_tokens = 1024;
-                                engine->push(request);
-                                request_count++;
+                            if ( ImGui::BeginMenu("recent") ) {
+                                if (std::filesystem::exists(session_root_path) && std::filesystem::is_directory(session_root_path)) {
+                                    for (const auto& entry : std::filesystem::directory_iterator(session_root_path)) {
+                                        if (entry.is_regular_file() && entry.path().extension() == ".json") {
+                                            if ( ImGui::MenuItem(entry.path().string().c_str()) ) {
+                                                session = Session::from_json(entry.path().string().c_str());
+                                            }
+                                        }
+                                    }
+                                }
+                                ImGui::EndMenu();
                             }
+
+                            ImGui::EndMenu();
                         }
                     }
 
-                    // cancle generation
-                    if ( ImGui::MenuItem("cancle") ) {
-
-                        if ( !is_cancelling ) {
-                            is_cancelling = true;
-                            cancle_status = std::async(std::launch::async,[&](){
-                                engine->cancel();
-                            });
-                        }
-                    }
-
-                    // play tracks
                     {
-                        if ( ImGui::MenuItem("play") ) {
-                            if( !miniaudio_impl::play() ) {
-                                ImGui::OpenPopup("my_play_popup");
+                        imgui_scoped::Disabled disable(session == nullptr);
+                        // generate speech
+                        if ( ImGui::MenuItem("run") ) {
+                            if( !session ) session = make_unique_nothrow<Session>();
+
+                            if ( session && !engine->is_busy() ) {
+                                request_session++;
+                                session->request_count() = 0;
+
+                                TTSRequest request{};
+                                for (const auto& item : session->configs()) {
+                                    if ( item.done ) { continue; } //skip processed item
+                                    request.id = item.id;
+                                    request.text = item.text;
+                                    request.voice_name = item.voice;
+                                    request.max_new_tokens = 1024;
+                                    engine->push(request);
+                                    session->request_count()++;
+                                }
                             }
                         }
 
-                        imgui_scoped::StyleVar popup_rounding(ImGuiStyleVar_PopupRounding, 6.0f);
-                        if (ImGui::BeginPopup("my_play_popup")) {
-                            ImGui::TextColored(ImColor(200,0,0,255), "play failed.");
-                            ImGui::EndPopup();
+                        // cancle generation
+                        if ( ImGui::MenuItem("cancle") ) {
+
+                            if ( !is_cancelling ) {
+                                is_cancelling = true;
+                                cancle_status = std::async(std::launch::async,[&](){
+                                    engine->cancel();
+                                });
+                            }
                         }
 
-                        if ( ImGui::MenuItem("stop") ) {
-                            miniaudio_impl::stop();
+                        // play tracks
+                        {
+                            if ( ImGui::MenuItem("play") ) {
+                                if( session && !session->play() ) {
+                                    ImGui::OpenPopup("my_play_popup");
+                                }
+                            }
+
+                            imgui_scoped::StyleVar popup_rounding(ImGuiStyleVar_PopupRounding, 6.0f);
+                            if (ImGui::BeginPopup("my_play_popup")) {
+                                ImGui::TextColored(ImColor(200,0,0,255), "play failed.");
+                                ImGui::EndPopup();
+                            }
+
+                            if ( ImGui::MenuItem("stop") ) {
+                                if ( session ) {
+                                    session->stop();
+                                }
+                            }
                         }
+
                     }
-
                     // voice registration (voice clone)
                     {
                         imgui_scoped::Disabled disable( is_loading );
@@ -369,6 +536,10 @@ int main(int argc, char** argv)
                         if(ImGui::BeginMenu("user interface")) {
 
                             ImGui::DragFloat("font scale", &ImGui::GetStyle().FontScaleMain, 0.01f, 0.2f, 3.0f);
+
+                            ImGuiIO& io = ImGui::GetIO();
+                            ImFontAtlas* atlas = io.Fonts;
+                            ImGui::ShowFontAtlas(atlas);
 
                             if( ImGui::BeginCombo("theme", ImGuiTheme::ImGuiTheme_Name(theme)) ) {
                                 for (int i = 0; i< ImGuiTheme::ImGuiTheme_Count; i++) {
@@ -414,9 +585,9 @@ int main(int argc, char** argv)
                 }
 
                 // "Generating" "Total" progress bar
-                if( is_initialized && engine->is_busy() && request_count ){
-                    ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), "Generating..");
-                    ImGui::ProgressBar(progress_total(), ImVec2(-1.0f, 0.0f), "Total..");
+                if( is_initialized && engine->is_busy() && session ){
+                    ImGui::ProgressBar(generate_progress, ImVec2(-1.0f, 0.0f), "Generating..");
+                    ImGui::ProgressBar(session->progress(), ImVec2(-1.0f, 0.0f), "Total..");
                 }
 
                 {
@@ -444,7 +615,8 @@ int main(int argc, char** argv)
             }
 
             // Text input
-            if( is_initialized ) {
+            if( is_initialized  && session) {
+                static bool enable_text_segmentation = false;
                 static int last_segment_max_token = -1;
                 static int last_edit_count = -1;
                 static int edit_count = 0;
@@ -463,6 +635,7 @@ int main(int argc, char** argv)
                      should_update |= (last_segment_max_token != segment_max_token);
                      should_update &= !is_loading;
                      should_update &= !is_segmenting;
+                     should_update &= enable_text_segmentation;
                      
                 if( should_update ) {
                     is_segmenting = true;
@@ -512,12 +685,25 @@ int main(int argc, char** argv)
                         uint32_t step = 1;
                         ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step);
                         segment_max_token = std::max(10U, segment_max_token);
+                        ImGui::Checkbox("edit trigger segmention", &enable_text_segmentation);
                         ImGui::EndPopup();
                     }
 
                     // column 2
                     ImGui::TableSetColumnIndex(2);
-                    imgui_scoped::TableTextCentered("status");
+                    if(ImGui::Selectable("status")) {
+                        ImGui::OpenPopup("my_status_popup");
+                    }
+
+                    if (ImGui::BeginPopup("my_status_popup")) {
+                        if ( ImGui::MenuItem("done") ) {
+                            session->set_done_value(true);
+                        }
+                        if ( ImGui::MenuItem("todo") ) {
+                            session->set_done_value(false);
+                        }
+                        ImGui::EndPopup();
+                    }
 
                     // column 3
                     ImGui::TableSetColumnIndex(3);
@@ -529,71 +715,73 @@ int main(int argc, char** argv)
                         for (const auto& voice : voices ) {
                             if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
                                 default_voice = voice;
-                                set_default_voice();
+                                session->set_default_voice(default_voice);
                             }
                         }
                         ImGui::EndPopup();
                     }
 
-                    imgui_scoped::StyleVar s_var(ImGuiStyleVar_SelectableRounding, 12.0f);
-                    ImGuiListClipper clipper;
-                    clipper.Begin(configs.size());
+                     
 
-                    static int last_selected_id = -1;
+                    imgui_scoped::StyleVar s_var(ImGuiStyleVar_SelectableRounding, 12.0f);
+
+                    ImGuiListClipper clipper;
+                    clipper.Begin(session->configs().size());
+
+                    static int last_selected_seq = -1;
                     static int edit_select_id = -1;
-                    size_t num = miniaudio_impl::track_count();
+                    size_t num = session->track_count();
 
                     bool is_shift_down = ImGui::IsKeyDown(ImGuiKey_LeftShift);
                     bool is_delete_down = ImGui::IsKeyDown(ImGuiKey_Delete);
                     if ( disable_edit ) {
-                        unselected_all();
+                        session->unselected_all();
                     }
 
                     while (clipper.Step()) {
-                        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
-                            auto& cfg = configs[i];
-                            bool idle = ( request_count == 0 );
-                            bool done = ( i < num );
-                            bool ongoing = ( i == num );
-                            bool todo = ( i > num );
-                            bool active = ( request_count > 0 );
-                            bool selected = ( ongoing && active );
+                        for (int seq = clipper.DisplayStart; seq < clipper.DisplayEnd; seq++) {
+                            auto& cfg = session->configs()[seq];
+                            bool generate_ongoing = ( cfg.id == generate_id );
+                                 generate_ongoing &= engine->is_busy();
+                            bool decode_ongoing = ( cfg.id == decode_id );
+                                 decode_ongoing &= engine->is_decoding();
+                            bool selected = generate_ongoing;
                                 selected |= ( cfg.selected );
 
-                            if ( ongoing && active ) {
+                            if ( generate_ongoing ) {
                                 ImGui::SetScrollHereY(0.5f);
                             }
 
-                            imgui_scoped::ID id(i);
+                            imgui_scoped::ID id(seq);
                             ImGui::TableNextRow();
 
                             ImGui::TableSetColumnIndex(0); 
-                            if(ImGui::Selectable(std::to_string(i).c_str(), selected, select_flags)) {
-                               miniaudio_impl::play(i);
+                            if(ImGui::Selectable(std::to_string(cfg.id).c_str(), selected, select_flags)) {
+                                session->play(cfg.id);
                                 if ( is_shift_down ) { // range select
-                                    if( last_selected_id >= 0 ) {
-                                        int start = std::min(last_selected_id, (int)i);
-                                        int end = std::max(last_selected_id, (int)i);
+                                    if( last_selected_seq >= 0 ) {
+                                        int start = std::min(last_selected_seq, (int)seq);
+                                        int end = std::max(last_selected_seq, (int)seq);
 
-                                        unselected_all();
+                                        session->unselected_all();
                                         for (size_t j = start; j <= end; j++) {
-                                            configs[j].selected = true;
+                                            session->configs()[j].selected = true;
                                         }
                                     }
                                 } else {
-                                    last_selected_id = i;
-                                    unselected_all();
-                                    configs[i].selected = true;
+                                    last_selected_seq = seq;
+                                    session->unselected_all();
+                                    session->configs()[seq].selected = true;
                                 }
                             }
 
                             if (ImGui::IsItemFocused()) {
                                 if (ImGui::IsMouseDoubleClicked(0)) {
-                                    edit_select_id = last_selected_id;
+                                    edit_select_id = last_selected_seq;
                                 }
                             }
 
-                            if ( edit_select_id != last_selected_id ) {
+                            if ( edit_select_id != last_selected_seq ) {
                                 edit_select_id = -1;
                             }
 
@@ -606,20 +794,34 @@ int main(int argc, char** argv)
                             }
 
                             ImGui::TableSetColumnIndex(2);
-                            if ( !idle && ongoing ) {
+
+                            if ( decode_ongoing || generate_ongoing ) {
                                 ImGui::SameLine();
                                 float r = ImGui::GetFrameHeight() * 0.5f;
                                 auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
-                                int arcs = engine->is_decoding()?2:1;
                                 float cell_width = ImGui::GetContentRegionAvail().x;
                                 float offset_x = cell_width* 0.5f - r;
                                 if (offset_x > 0.0f) {
                                     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
                                 }
+                                int arcs = decode_ongoing?2:1;
                                 
                                 ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
-                            } else {
-                                imgui_scoped::TableTextCentered(done?"done":ongoing?"-":todo?"todo":"...");
+                            }else {
+                                auto text = cfg.done?"done":"todo";
+                                if ( ImGui::Selectable(text) ) {
+                                    ImGui::OpenPopup("my_done_popup");
+                                }
+
+                                if (ImGui::BeginPopup("my_done_popup")) {
+                                    if ( ImGui::MenuItem("done") ) {
+                                        cfg.done = true;
+                                    }
+                                    if ( ImGui::MenuItem("todo") ) {
+                                        cfg.done = false;
+                                    }
+                                    ImGui::EndPopup();
+                                }
                             }
 
                             ImGui::TableSetColumnIndex(3);
@@ -641,9 +843,10 @@ int main(int argc, char** argv)
                     }
 
                     if ( is_delete_down ) {
-                        last_selected_id = -1;
-                        std::erase_if(configs, [](const auto& item){ return item.selected; });
+                        last_selected_seq = -1;
+                        session->delete_selected();
                     }
+                    
                 }
                 ImGui::EndChild();
             }
@@ -653,8 +856,7 @@ int main(int argc, char** argv)
                 if ( cancle_status.wait_for(10ms) == std::future_status::ready ) {
                     cancle_status.get();
                     cancle_status = {};
-                    request_count = 0;
-                    export_to_file();
+                    session->request_count() = 0;
                     is_cancelling = false;
                 }
             }
@@ -666,15 +868,18 @@ int main(int argc, char** argv)
                     const auto& chunks = split_text_status.get();
                     if ( chunks.has_value() ) {
                         TextProcessor processor;
-                        configs.clear();
-                        config_item_s item;
+
+                        if ( !session ) { session = make_unique_nothrow<Session>(); }
+
+                        session->configs().clear();
+                        Session::config_item_s item;
                         for (int i = 0; i < chunks->size(); i++) {
                             item.id = i;
                             item.text = processor.clean_text(chunks.value()[i]);
                             item.voice = default_voice;
                             item.selected = false;
                             item.done = false;
-                            configs.push_back(item);
+                            session->configs().push_back(item);
                         }
                     }
                     split_text_status = {};
@@ -710,8 +915,9 @@ int main(int argc, char** argv)
         glfwSwapBuffers(main_window);
 
     }
-
-    export_to_file();
+    if ( session ) {
+        session.reset(nullptr);
+    }
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

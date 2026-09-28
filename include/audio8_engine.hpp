@@ -80,6 +80,7 @@ constexpr int FRAME_SAMPLES = 2048;
 }
 
 using code_frame = std::array<int64_t, audio8::NUM_CODEBOOKS>;
+using code_frame_item = std::pair<int, std::vector<code_frame>>;
 struct RuntimeConfig { };
 struct SamplingConfig { };
 
@@ -187,6 +188,7 @@ struct Audio8ModelPaths
 
 struct TTSRequest
 {
+    int id;
     std::string text;
 
     std::string voice_name;
@@ -198,8 +200,9 @@ struct TTSRequest
 
 using codebooks_callback = std::function<void(const int64_t* v, size_t size)>;
 using progress_callback = std::function<void(float progress, float decode_eta)>;
-using decoder_callback = std::function<void(std::vector<float>&)>;
-using decoder_eta_callback = std::function<void(float decode_eta)>;
+using generate_callback = std::function<void(float progress, const int id)>;
+using decoder_callback = std::function<void(std::vector<float>&pcm, const int id)>;
+using decoder_eta_callback = std::function<void(float decode_eta, const int id)>;
 
 class Audio8Engine 
 {
@@ -223,6 +226,7 @@ public:
     bool contains_cjk(const std::string& text);
     std::optional<std::vector<std::string>> split_text_by_tokens( const std::string& text, size_t max_tokens );
     void set_progress_callback(progress_callback cb);
+    void set_generate_callback(generate_callback cb);
     void set_decoder_callback(decoder_callback cb);
     void set_decoder_eta_callback(decoder_eta_callback cb);
     void push( const TTSRequest& request);

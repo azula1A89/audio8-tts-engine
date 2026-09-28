@@ -238,8 +238,8 @@ target_include_directories(audio8 PUBLIC
 target_link_libraries(audio8 
     PUBLIC 
         fmt::fmt
-    PRIVATE 
         json
+    PRIVATE 
         miniaudio
         onnxruntime_imported
         tokenizers_cpp

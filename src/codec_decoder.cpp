@@ -74,11 +74,11 @@ public:
         run_opts_.SetTerminate();
         if ( on_pcm_update_ ) {
             std::vector<float> empty;
-            on_pcm_update_(empty);
+            on_pcm_update_(empty, -1);
         }
     }
 
-    void decode_audio_batch(const std::vector<code_frame>& frames,  decoder_callback cb) {
+    void decode_audio_batch(const code_frame_item& frames,  decoder_callback cb) {
         if (!initialized_) {
             initialized_ = initialize();
             if (!initialized_) return;
@@ -88,11 +88,11 @@ public:
             on_pcm_update_ = cb;
         }
 
-        size_t T = frames.size();
+        size_t T = frames.second.size();
         if (T == 0) {
             if ( on_pcm_update_ ) {
                 std::vector<float> empty;
-                on_pcm_update_(empty);
+                on_pcm_update_(empty, frames.first);
             }
             return;
         }
@@ -107,7 +107,7 @@ public:
 
             for (size_t t = 0; t < T; ++t) {
                 for (size_t c = 0; c < audio8::NUM_CODEBOOKS; ++c) {
-                    input.data[c * T + t] = frames[t][c];
+                    input.data[c * T + t] = frames.second[t][c];
                 }
             }
 
@@ -140,7 +140,7 @@ public:
             }
 
             if ( on_pcm_update_ ) {
-                on_pcm_update_(out);
+                on_pcm_update_(out, frames.first);
             } else {
                 miniaudio_impl::wav_write(out.data(), out.size());
             }
@@ -221,7 +221,7 @@ void CodecDecoder::terminate() {
     pImpl->terminate();
 }
 
-void CodecDecoder::decode_audio_batch(const std::vector<code_frame>& frames,  decoder_callback cb) {
+void CodecDecoder::decode_audio_batch(const code_frame_item& frames,  decoder_callback cb) {
     pImpl->decode_audio_batch(frames, cb);
 }
 

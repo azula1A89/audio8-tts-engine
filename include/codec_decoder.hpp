@@ -43,6 +43,6 @@ public:
     bool init();
     bool is_running();
     void terminate();
-    void decode_audio_batch(const std::vector<code_frame>& frames, decoder_callback cb = nullptr);
+    void decode_audio_batch(const code_frame_item& frames, decoder_callback cb = nullptr);
     float estimate_decode_time_ms(size_t T);
 };
