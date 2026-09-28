@@ -43,13 +43,11 @@ std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
 }
 
 namespace miniaudio_impl {
-    void track_add(const std::vector<float>& track);
+    void track_add(const std::string& path);
     void track_delete(int index);
+    void track_clear();
     size_t track_count();
-    void copy_to_buffer(float* dest, size_t begin, size_t length);
     size_t buffer_length();
-    void buffer_reset();
-    bool play(int index);
     bool play();
     bool pause();
     bool stop();

@@ -26,7 +26,7 @@ SOFTWARE.
 #include <vector>
 #include <mutex>
 #include <cstring>
-#include <algorithm>
+#include <filesystem>
 
 #include <fmt/core.h>
 #define MINIAUDIO_IMPLEMENTATION
@@ -45,8 +45,10 @@ std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
 
 class MiniAudio::Tracks {
 public:
-    Tracks(ma_uint32 channels, ma_uint32 sampleRate)
-        : channels_(channels), sample_tate_(sampleRate), cursor_(0), total_frames_(0)
+    Tracks(ma_uint32 channels, ma_uint32 sample_rate)
+        : channels_(channels), sample_rate_(sample_rate), 
+          cursor_(0), total_frames_(0), 
+          decoder_open_(false), current_track_idx_(0)
     {
         static ma_data_source_vtable vtable = {
             read_callback,
@@ -65,37 +67,69 @@ public:
     }
 
     ~Tracks() {
+        close_current_decoder_nolock();
         ma_data_source_uninit(&data_source_impl_.base);
     }
 
-    void track_add(const std::vector<float>& track) {
-        if (track.empty()) return;
-        
+    void track_add(const std::filesystem::path& wav_path) {
         std::lock_guard<std::mutex> lock(mutex_);
-        tracks_.push_back(track);
+
+        ma_decoder_config config = ma_decoder_config_init(ma_format_f32, channels_, sample_rate_);
+        ma_decoder temp_decoder;
         
+        if (ma_decoder_init_file(wav_path.string().c_str(), &config, &temp_decoder) != MA_SUCCESS) {
+            return;
+        }
+
+        ma_uint64 length = 0;
+        ma_decoder_get_length_in_pcm_frames(&temp_decoder, &length);
+        ma_decoder_uninit(&temp_decoder);
+
+        if (length == 0) return;
+
+        tracks_.push_back(wav_path);
         track_offsets_.push_back(total_frames_);
-        total_frames_ += track.size() / channels_;
+        total_frames_ += length;
     }
 
     void track_delete(int index) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (index >= 0 && index < tracks_.size()) {
-            ma_uint64 deleted_frames = tracks_[index].size() / channels_;
-            
+
+            if (decoder_open_ && current_track_idx_ == index) {
+                close_current_decoder_nolock();
+            }
+
             tracks_.erase(tracks_.begin() + index);
             track_offsets_.erase(track_offsets_.begin() + index);
-            
+
             total_frames_ = 0;
             for (size_t i = 0; i < tracks_.size(); ++i) {
                 track_offsets_[i] = total_frames_;
-                total_frames_ += tracks_[i].size() / channels_;
+                
+                ma_decoder_config config = ma_decoder_config_init(ma_format_f32, channels_, sample_rate_);
+                ma_decoder temp;
+                ma_uint64 len = 0;
+                if (ma_decoder_init_file(tracks_[i].string().c_str(), &config, &temp) == MA_SUCCESS) {
+                    ma_decoder_get_length_in_pcm_frames(&temp, &len);
+                    ma_decoder_uninit(&temp);
+                }
+                total_frames_ += len;
             }
 
             if (cursor_ > total_frames_) {
                 cursor_ = total_frames_;
             }
         }
+    }
+
+    void track_clear() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        close_current_decoder_nolock();
+        tracks_.clear();
+        track_offsets_.clear();
+        total_frames_ = 0;
+        cursor_ = 0;
     }
 
     size_t track_count() {
@@ -114,59 +148,16 @@ public:
     double track_duration_sec(int index) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (index >= 0 && index < tracks_.size()) {
-            size_t frames = tracks_[index].size() / channels_;
-            return static_cast<double>(frames) / sample_tate_;
+            ma_uint64 start = track_offsets_[index];
+            ma_uint64 end = (index + 1 < tracks_.size()) ? track_offsets_[index + 1] : total_frames_;
+            return static_cast<double>(end - start) / sample_rate_;
         }
         return 0.0;
-    }
-
-    void buffer_reset() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        tracks_.clear();
-        track_offsets_.clear();
-        total_frames_ = 0;
-        cursor_ = 0;
     }
 
     size_t buffer_length() {
         std::lock_guard<std::mutex> lock(mutex_);
         return total_frames_ * channels_;
-    }
-
-    void copy_to_buffer_offset(float* dest, size_t begin, size_t length) {
-        const ma_uint64 total_samples = total_frames_ * channels_;
-        if (!dest || length == 0 || begin > total_samples ) return;
-
-        size_t begin_track_idx = 0;
-        auto upper_begin = std::upper_bound(track_offsets_.begin(), track_offsets_.end(), begin);
-        if ( upper_begin != track_offsets_.end() ) {
-            begin_track_idx = std::distance(track_offsets_.begin(), upper_begin) - 1;
-        } else {
-            begin_track_idx = tracks_.size() - 1;
-        }
-
-        size_t end_track_idx = 0;
-        auto end = begin + length;
-        end = end > total_samples ? total_samples : end;
-        auto upper_end = std::upper_bound(track_offsets_.begin(), track_offsets_.end(), end);
-        if ( upper_end != track_offsets_.end() ) {
-            end_track_idx = std::distance(track_offsets_.begin(), upper_end) - 1;
-        } else {
-            end_track_idx = tracks_.size() - 1;
-        }
-
-        size_t copied = 0;
-        for (size_t track_idx = begin_track_idx; track_idx <= end_track_idx; ++track_idx) {
-            const auto& track = tracks_[track_idx];
-            size_t start_frame = (track_idx == begin_track_idx) ? (begin - track_offsets_[begin_track_idx]) : 0;
-            size_t end_frame = (track_idx == end_track_idx) ? (end - track_offsets_[track_idx]) : track.size();
-            size_t to_copy = end_frame - start_frame;
-            if (to_copy > 0) {
-                std::memcpy(dest + copied, track.data() + start_frame, to_copy * sizeof(float));
-                copied += to_copy;
-            }
-            if (copied >= length) break;
-        }
     }
 
     ma_data_source* get_ma_data_source() {
@@ -180,13 +171,48 @@ private:
     } data_source_impl_;
 
     std::mutex mutex_;
-    std::vector<std::vector<float>> tracks_;
+    std::vector<std::filesystem::path> tracks_;
     std::vector<ma_uint64> track_offsets_;
     
     ma_uint64 cursor_;
     ma_uint64 total_frames_;
     ma_uint32 channels_;
-    ma_uint32 sample_tate_;
+    ma_uint32 sample_rate_;
+
+    bool decoder_open_;
+    size_t current_track_idx_;
+    ma_decoder current_decoder_;
+
+    void close_current_decoder_nolock() {
+        if (decoder_open_) {
+            ma_decoder_uninit(&current_decoder_);
+            decoder_open_ = false;
+        }
+    }
+
+    bool open_decoder_for_track_nolock(size_t track_idx) {
+        close_current_decoder_nolock();
+        
+        if (track_idx >= tracks_.size()) return false;
+
+        ma_decoder_config config = ma_decoder_config_init(ma_format_f32, channels_, sample_rate_);
+        if (ma_decoder_init_file(tracks_[track_idx].string().c_str(), &config, &current_decoder_) != MA_SUCCESS) {
+            return false;
+        }
+        
+        decoder_open_ = true;
+        current_track_idx_ = track_idx;
+        return true;
+    }
+
+    size_t get_track_index_from_cursor_nolock(ma_uint64 cursor) {
+        for (size_t i = 1; i < track_offsets_.size(); ++i) {
+            if (cursor < track_offsets_[i]) {
+                return i - 1;
+            }
+        }
+        return track_offsets_.empty() ? 0 : track_offsets_.size() - 1;
+    }
 
     static Tracks* get_parent(ma_data_source* p_data_source) {
         return ((DataSourceImpl*)p_data_source)->parent;
@@ -201,35 +227,35 @@ private:
             return MA_AT_END;
         }
 
-        ma_uint64 frames_remaining_to_read = frame_count;
-        float* p_out = static_cast<float*>(p_frames_out);
         ma_uint64 total_frames_read = 0;
+        float* p_out = static_cast<float*>(p_frames_out);
 
-        size_t track_idx = 0;
-        auto upper = std::upper_bound(self->track_offsets_.begin(), self->track_offsets_.end(), self->cursor_);
+        while (total_frames_read < frame_count && self->cursor_ < self->total_frames_) {
+            size_t expected_track = self->get_track_index_from_cursor_nolock(self->cursor_);
 
-        if ( upper != self->track_offsets_.end() ) {
-            track_idx = std::distance(self->track_offsets_.begin(), upper) - 1;
-        } else {
-            track_idx = self->tracks_.size() - 1;
-        }
-        
-        while (frames_remaining_to_read > 0 && track_idx < self->tracks_.size()) {
-            ma_uint64 track_start_frame = self->track_offsets_[track_idx];
-            ma_uint64 track_end_frame = track_start_frame + (self->tracks_[track_idx].size() / self->channels_);
-            ma_uint64 offset_in_track = self->cursor_ - track_start_frame;
-            ma_uint64 frames_avail_in_track = track_end_frame - self->cursor_;
-            ma_uint64 frames_to_copy = frames_remaining_to_read < frames_avail_in_track? frames_remaining_to_read : frames_avail_in_track;
-            
-            const float* p_src = self->tracks_[track_idx].data() + (offset_in_track * self->channels_);
-            std::memcpy(p_out, p_src, frames_to_copy * self->channels_ * sizeof(float));
+            if (!self->decoder_open_ || self->current_track_idx_ != expected_track) {
+                if (!self->open_decoder_for_track_nolock(expected_track)) {
+                    break;
+                }
+                
+                ma_uint64 local_offset = self->cursor_ - self->track_offsets_[expected_track];
+                ma_decoder_seek_to_pcm_frame(&self->current_decoder_, local_offset);
+            }
 
-            p_out += frames_to_copy * self->channels_;
-            self->cursor_ += frames_to_copy;
-            total_frames_read += frames_to_copy;
-            frames_remaining_to_read -= frames_to_copy;
+            ma_uint64 frames_to_read = frame_count - total_frames_read;
+            ma_uint64 frames_read_this_iter = 0;
 
-            track_idx++;
+            ma_decoder_read_pcm_frames(&self->current_decoder_, p_out, frames_to_read, &frames_read_this_iter);
+
+            if (frames_read_this_iter == 0) {
+                self->cursor_ = (expected_track + 1 < self->tracks_.size()) 
+                                 ? self->track_offsets_[expected_track + 1] 
+                                 : self->total_frames_;
+            } else {
+                total_frames_read += frames_read_this_iter;
+                p_out += frames_read_this_iter * self->channels_;
+                self->cursor_ += frames_read_this_iter;
+            }
         }
 
         if (p_frames_read) *p_frames_read = total_frames_read;
@@ -239,6 +265,7 @@ private:
     static ma_result seek_callback(ma_data_source* p_data_source, ma_uint64 frame_index) {
         Tracks* self = get_parent(p_data_source);
         std::lock_guard<std::mutex> lock(self->mutex_);
+        
         self->cursor_ = (frame_index > self->total_frames_) ? self->total_frames_ : frame_index;
         return MA_SUCCESS;
     }
@@ -247,7 +274,7 @@ private:
         Tracks* self = get_parent(p_data_source);
         if (p_format) *p_format = ma_format_f32;
         if (p_channels) *p_channels = self->channels_;
-        if (p_sample_rate) *p_sample_rate = self->sample_tate_;
+        if (p_sample_rate) *p_sample_rate = self->sample_rate_;
         return MA_SUCCESS;
     }
 
@@ -279,34 +306,15 @@ public:
         ma_sound_uninit(&sound_);
         ma_engine_uninit(&engine_);
     }
-    bool play(int index) {
-        // stop current playing
-        if ( ma_sound_is_playing(&sound_) ) {
-            ma_sound_start(&sound_);
-        }
 
-        // setup stop point
-        auto t = ma_engine_get_time_in_pcm_frames(&engine_) +
-                    (ma_engine_get_sample_rate(&engine_)) * tracks_.track_duration_sec(index);
-        ma_sound_set_stop_time_in_pcm_frames(&sound_, t);
-
-        // start playing
-        size_t begin = tracks_.track_begin_index(index);
-        bool ret = (MA_SUCCESS == ma_sound_seek_to_pcm_frame(&sound_, begin));
-             ret |= (MA_SUCCESS == ma_sound_start(&sound_));
-        
-        return ret;
-    }
     bool play() {
-        ma_sound_reset_stop_time(&sound_);
+        bool ret = (MA_SUCCESS == ma_sound_seek_to_pcm_frame(&sound_, 0));
         return (MA_SUCCESS == ma_sound_start(&sound_));
     }
     bool pause() {
-        ma_sound_reset_stop_time(&sound_);
         return (MA_SUCCESS == ma_sound_stop(&sound_));
     }
     bool stop() {
-        ma_sound_reset_stop_time(&sound_);
         bool ret = (MA_SUCCESS == ma_sound_seek_to_pcm_frame(&sound_, 0));
              ret |= (MA_SUCCESS == ma_sound_stop(&sound_));
         return ret;
@@ -361,15 +369,15 @@ public:
     }
 
 private:
-    static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+    static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frame_count) {
         LoopPlayer* p_player = (LoopPlayer*)pDevice->pUserData;
         if (!p_player) return;
 
         float* p_output_f32 = (float*)pOutput;
         ma_uint32 frames_read_total = 0;
 
-        while (frames_read_total < frameCount) {
-            ma_uint32 frames_remaining = frameCount - frames_read_total;
+        while (frames_read_total < frame_count) {
+            ma_uint32 frames_remaining = frame_count - frames_read_total;
             float* p_buffer_out = p_output_f32 + (frames_read_total * p_player->decoder_.outputChannels);
 
             if (p_player->state_ == State::Audio) {
@@ -462,15 +470,21 @@ MiniAudio::MiniAudio() :
 
 MiniAudio::~MiniAudio(){};
 
-void MiniAudio::track_add(const std::vector<float>& item) {
+void MiniAudio::track_add(const std::string& path) {
     if ( tracks_ ) {
-        tracks_->track_add(const_cast<std::vector<float>&>(item));
+        tracks_->track_add(path);
     }
 }
 
 void MiniAudio::track_delete(int index) {
     if ( tracks_ ) {
         tracks_->track_delete(index);
+    }
+}
+
+void MiniAudio::track_clear() {
+    if ( tracks_ ) {
+        tracks_->track_clear();
     }
 }
 
@@ -481,30 +495,11 @@ size_t MiniAudio::track_count() {
     return 0;
 }
 
-void MiniAudio::copy_to_buffer(float* dest, size_t begin, size_t length) {
-    if ( tracks_ ) {
-        tracks_->copy_to_buffer_offset(dest, begin, length);
-    }
-}
-
 size_t MiniAudio::buffer_length() {
     if ( tracks_ ) {
         return tracks_->buffer_length();
     }
     return 0;
-}
-
-void MiniAudio::buffer_reset() {
-    if ( tracks_ ) {
-        tracks_->buffer_reset();
-    }
-}
-
-bool MiniAudio::play(int index) {
-    if ( track_player_ ) {
-        return track_player_->play(index);
-    }
-    return false;
 }
 
 bool MiniAudio::play() {

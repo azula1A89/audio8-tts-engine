@@ -19,6 +19,8 @@
 #include <fstream>
 #include <queue>
 #include <mutex>
+#include <algorithm>
+#include <miniaudio_impl.hpp>
 
 using namespace std::chrono_literals;
 using json = nlohmann::json;
@@ -74,10 +76,11 @@ public:
         if ( !std::filesystem::exists(cache_path) ) {
             std::filesystem::create_directories(cache_path);
         }
+        init_playlist();
     };
 
     ~Session() {
-        stop();
+        stop_file();
         save();
     }
 
@@ -100,6 +103,7 @@ public:
             config.done = cfg["done"];
             session->configs().push_back(config);
         }
+        session->init_playlist();
         return session;
     }
 
@@ -111,9 +115,37 @@ public:
         return configs_;
     }
 
-    bool play() {
+    void init_playlist() {
+        auto cache_path = root_ / cache_;
+        if (!std::filesystem::exists(cache_path) || !std::filesystem::is_directory(cache_path)) {
+            return;
+        }
 
+        miniaudio_impl::track_clear();
+        std::vector<std::filesystem::path> paths;
+        for (const auto& entry : std::filesystem::directory_iterator(cache_path)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".wav") {
+                paths.push_back(entry.path());
+            }
+        }
+
+        std::sort(paths.begin(), paths.end());
+        for (const auto& p : paths) {
+            miniaudio_impl::track_add(p);
+        }
+    }
+
+    bool playlist_start() {
+        miniaudio_impl::play();
         return true;
+    }
+
+    void pause_playlist() {
+        miniaudio_impl::pause();
+    }
+
+    void stop_playlist() {
+        miniaudio_impl::stop();
     }
 
     bool play(int idx) {
@@ -125,7 +157,7 @@ public:
         return miniaudio_impl::play_file(wav_file.string().c_str());
     }
 
-    void stop() {
+    void stop_file() {
         miniaudio_impl::stop_file();
     }
 
@@ -134,7 +166,7 @@ public:
         auto wav_file = root_ / cache_ / fmt::format("{:05}.wav", id);
         miniaudio_impl::wav_write(track.data(), track.size(), wav_file.string().c_str());
         track_count_ = track_count();
-        
+        miniaudio_impl::track_add(wav_file);
         std::lock_guard<std::mutex> guard(done_mutex_);
         done_.push(id);
     };
@@ -321,7 +353,7 @@ int main(int argc, char** argv)
     int generate_id = -1;
     int decode_id = -1;
     float decode_eta = -1.0f;
-    int request_session = 0;
+    std::atomic<int> request_done = 0;
 
     // Main loop
     while ( glfwWindowShouldClose(main_window) == GL_FALSE )
@@ -377,6 +409,7 @@ int main(int argc, char** argv)
 
             engine->set_decoder_callback([&](std::vector<float> pcm_in, const int id_in){
                 if( session ) session->save_to_wav(pcm_in, id_in);
+                request_done.fetch_add(1);
             });
 
             engine->set_decoder_eta_callback([&](float eta_in, const int id_in){
@@ -447,7 +480,7 @@ int main(int argc, char** argv)
                             if( !session ) session = make_unique_nothrow<Session>();
 
                             if ( session && !engine->is_busy() ) {
-                                request_session++;
+                                request_done.store(0);
                                 session->request_count() = 0;
 
                                 TTSRequest request{};
@@ -477,7 +510,7 @@ int main(int argc, char** argv)
                         // play tracks
                         {
                             if ( ImGui::MenuItem("play") ) {
-                                if( session && !session->play() ) {
+                                if( session && !session->playlist_start() ) {
                                     ImGui::OpenPopup("my_play_popup");
                                 }
                             }
@@ -490,7 +523,8 @@ int main(int argc, char** argv)
 
                             if ( ImGui::MenuItem("stop") ) {
                                 if ( session ) {
-                                    session->stop();
+                                    session->stop_playlist();
+                                    session->stop_file();
                                 }
                             }
                         }
@@ -587,7 +621,7 @@ int main(int argc, char** argv)
                 // "Generating" "Total" progress bar
                 if( is_initialized && engine->is_busy() && session ){
                     ImGui::ProgressBar(generate_progress, ImVec2(-1.0f, 0.0f), "Generating..");
-                    ImGui::ProgressBar(session->progress(), ImVec2(-1.0f, 0.0f), "Total..");
+                    ImGui::ProgressBar(session->progress(), ImVec2(-1.0f, 0.0f), fmt::format("{}/{}", request_done.load(), session->request_count()).c_str());
                 }
 
                 {
@@ -616,11 +650,12 @@ int main(int argc, char** argv)
 
             // Text input
             if( is_initialized  && session) {
-                static bool enable_text_segmentation = false;
+                static bool enable_edit_trigger = false;
                 static int last_segment_max_token = -1;
                 static int last_edit_count = -1;
                 static int edit_count = 0;
-                static ImFont* editor_font = cjk;    
+                static bool btn_update_segmention = false;
+                static ImFont* editor_font = cjk;
                 bool disable_edit = engine->is_busy() || is_segmenting;
 
                 imgui_scoped::Font font(editor_font);
@@ -635,9 +670,11 @@ int main(int argc, char** argv)
                      should_update |= (last_segment_max_token != segment_max_token);
                      should_update &= !is_loading;
                      should_update &= !is_segmenting;
-                     should_update &= enable_text_segmentation;
+                     should_update &= enable_edit_trigger;
+                     should_update |= btn_update_segmention;
                      
                 if( should_update ) {
+                    btn_update_segmention = false;
                     is_segmenting = true;
                     last_edit_count = edit_count;
                     last_segment_max_token = segment_max_token;
@@ -685,7 +722,10 @@ int main(int argc, char** argv)
                         uint32_t step = 1;
                         ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step);
                         segment_max_token = std::max(10U, segment_max_token);
-                        ImGui::Checkbox("edit trigger segmention", &enable_text_segmentation);
+                        ImGui::Checkbox("edit trigger segmention", &enable_edit_trigger);
+                        if ( ImGui::Button("update segmention", {-1,0}) ) {
+                            btn_update_segmention = true;
+                        }
                         ImGui::EndPopup();
                     }
 

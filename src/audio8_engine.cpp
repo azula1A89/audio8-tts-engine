@@ -23,7 +23,6 @@ SOFTWARE.
 */
 
 #include <atomic>
-#include <array>
 #include <filesystem>
 #include <mutex>
 #include <queue>
@@ -46,13 +45,11 @@ using namespace std::chrono_literals;
 
 namespace miniaudio_impl {
     MiniAudio miniaudio;
-    void track_add(const std::vector<float>& track) { miniaudio.track_add(track); }
+    void track_add(const std::string& path) { miniaudio.track_add(path); }
     void track_delete(int index) { miniaudio.track_delete(index); }
+    void track_clear() { miniaudio.track_clear(); };
     size_t track_count() { return miniaudio.track_count(); }
-    void copy_to_buffer(float* dest, size_t begin, size_t length) { miniaudio.copy_to_buffer(dest, begin, length); };
     size_t buffer_length() { return miniaudio.buffer_length(); }
-    void buffer_reset() { miniaudio.buffer_reset(); }
-    bool play(int index) { return miniaudio.play(index); }
     bool play() { return miniaudio.play(); }
     bool pause() { return miniaudio.pause(); }
     bool stop() { return miniaudio.stop(); }

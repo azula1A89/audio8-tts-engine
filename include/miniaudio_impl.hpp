@@ -39,14 +39,12 @@ public:
     MiniAudio& operator=(MiniAudio&&) = default;
     MiniAudio(const MiniAudio&) = delete;
     MiniAudio& operator=(const MiniAudio&) = delete;
-    void track_add(const std::vector<float>& track);
+    void track_add(const std::string& path);
     void track_delete(int index);
+    void track_clear();
     size_t track_count();
     void export_audio();
-    void copy_to_buffer(float* dest, size_t begin, size_t length);
     size_t buffer_length();
-    void buffer_reset();
-    bool play(int index);
     bool play();
     bool pause();
     bool stop();
