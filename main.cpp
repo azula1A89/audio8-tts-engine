@@ -107,6 +107,10 @@ public:
         return session;
     }
 
+    void export_audio( const int& max_length_sec ) {
+        miniaudio_impl::export_audio(max_length_sec);
+    }
+
     size_t& request_count() {
         return request_count_;
     }
@@ -349,6 +353,7 @@ int main(int argc, char** argv)
     uint32_t sample_rate = 44100;
     uint32_t max_audio_frames = max_audio_duration_sec * sample_rate;
     uint32_t segment_max_token = 20;
+    float max_length_sec = 1200;
     float generate_progress = 0.0f;
     int generate_id = -1;
     int decode_id = -1;
@@ -442,6 +447,7 @@ int main(int argc, char** argv)
             
             // Menubar
             if( is_initialized ) {
+                imgui_scoped::StyleVar popup_rounding(ImGuiStyleVar_PopupRounding, 6.0f);
                 imgui_scoped::StyleVar item_speacing(ImGuiStyleVar_ItemSpacing, {20.0f, 5.0f});
                 imgui_scoped::Disabled disable(is_loading);
                 if (ImGui::BeginMenuBar()) {
@@ -460,7 +466,7 @@ int main(int argc, char** argv)
                                 if (std::filesystem::exists(session_root_path) && std::filesystem::is_directory(session_root_path)) {
                                     for (const auto& entry : std::filesystem::directory_iterator(session_root_path)) {
                                         if (entry.is_regular_file() && entry.path().extension() == ".json") {
-                                            if ( ImGui::MenuItem(entry.path().string().c_str()) ) {
+                                            if ( ImGui::MenuItem(entry.path().filename().string().c_str()) ) {
                                                 session = Session::from_json(entry.path().string().c_str());
                                             }
                                         }
@@ -469,17 +475,27 @@ int main(int argc, char** argv)
                                 ImGui::EndMenu();
                             }
 
+                            {
+                                imgui_scoped::Disabled disable(session == nullptr);
+                                if ( ImGui::BeginMenu("export") ) {
+                                    ImGui::DragFloat("max audio length(second)", &max_length_sec, 1.0f, 1.0f, 0.0f);
+                                    if ( ImGui::Button("export") ) {
+                                        session->export_audio(max_length_sec);
+                                    }
+                                    ImGui::EndMenu();
+                                }
+                            }
+
                             ImGui::EndMenu();
                         }
                     }
 
                     {
                         imgui_scoped::Disabled disable(session == nullptr);
-                        // generate speech
-                        if ( ImGui::MenuItem("run") ) {
-                            if( !session ) session = make_unique_nothrow<Session>();
 
-                            if ( session && !engine->is_busy() ) {
+                        {
+                            imgui_scoped::Disabled disable(engine->is_busy());
+                            if ( ImGui::MenuItem("run") ) {
                                 request_done.store(0);
                                 session->request_count() = 0;
 
@@ -496,26 +512,27 @@ int main(int argc, char** argv)
                             }
                         }
 
-                        // cancle generation
-                        if ( ImGui::MenuItem("cancle") ) {
+                        {
+                            imgui_scoped::Disabled disable(!engine->is_busy());
+                            if ( ImGui::MenuItem("cancle") ) {
 
-                            if ( !is_cancelling ) {
-                                is_cancelling = true;
-                                cancle_status = std::async(std::launch::async,[&](){
-                                    engine->cancel();
-                                });
+                                if ( !is_cancelling ) {
+                                    is_cancelling = true;
+                                    cancle_status = std::async(std::launch::async,[&](){
+                                        engine->cancel();
+                                    });
+                                }
                             }
                         }
 
                         // play tracks
                         {
                             if ( ImGui::MenuItem("play") ) {
-                                if( session && !session->playlist_start() ) {
+                                if( !session->playlist_start() ) {
                                     ImGui::OpenPopup("my_play_popup");
                                 }
                             }
 
-                            imgui_scoped::StyleVar popup_rounding(ImGuiStyleVar_PopupRounding, 6.0f);
                             if (ImGui::BeginPopup("my_play_popup")) {
                                 ImGui::TextColored(ImColor(200,0,0,255), "play failed.");
                                 ImGui::EndPopup();
@@ -571,9 +588,9 @@ int main(int argc, char** argv)
 
                             ImGui::DragFloat("font scale", &ImGui::GetStyle().FontScaleMain, 0.01f, 0.2f, 3.0f);
 
-                            ImGuiIO& io = ImGui::GetIO();
-                            ImFontAtlas* atlas = io.Fonts;
-                            ImGui::ShowFontAtlas(atlas);
+                            // ImGuiIO& io = ImGui::GetIO();
+                            // ImFontAtlas* atlas = io.Fonts;
+                            // ImGui::ShowFontAtlas(atlas);
 
                             if( ImGui::BeginCombo("theme", ImGuiTheme::ImGuiTheme_Name(theme)) ) {
                                 for (int i = 0; i< ImGuiTheme::ImGuiTheme_Count; i++) {

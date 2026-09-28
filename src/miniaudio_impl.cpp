@@ -495,6 +495,38 @@ size_t MiniAudio::track_count() {
     return 0;
 }
 
+void MiniAudio::export_audio( int max_length_sec, const char* export_path ) {
+    ma_result result;
+    ma_uint64 frames_read;
+    ma_uint64 frames_seeked;
+    ma_uint64 max_frames = max_length_sec * 44100U * 1;
+    ma_uint64 len = tracks_->buffer_length();
+
+    std::filesystem::path folder = export_path;
+    if ( len && std::filesystem::exists(folder) && std::filesystem::is_directory(folder) ) {
+        int parts = len / max_frames;
+        int final_len = len % max_frames;
+        std::vector<float> buffer;
+        
+        for (int n = 0; n < parts + 1; n++) {
+            int length = ( n >= parts ) ? final_len : max_frames;
+            buffer.resize(length);
+
+            if ( n ) {
+                result = ma_data_source_seek_pcm_frames(tracks_->get_ma_data_source(), n * max_frames, &frames_seeked);
+                if (result != MA_SUCCESS) { break; }
+            }
+            
+            result = ma_data_source_read_pcm_frames(tracks_->get_ma_data_source(), buffer.data(), length, &frames_read);
+            if (result != MA_SUCCESS) { break; }
+
+            auto wav_file = folder / fmt::format("part_{}_{}.wav", n+1, parts+1);
+            wav_write( buffer.data(), buffer.size(), wav_file.string().c_str());
+        }
+    }
+
+}
+
 size_t MiniAudio::buffer_length() {
     if ( tracks_ ) {
         return tracks_->buffer_length();

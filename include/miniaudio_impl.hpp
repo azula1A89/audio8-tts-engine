@@ -43,7 +43,7 @@ public:
     void track_delete(int index);
     void track_clear();
     size_t track_count();
-    void export_audio();
+    void export_audio(int max_length_sec, const char* export_path = "sessions");
     size_t buffer_length();
     bool play();
     bool pause();
