@@ -811,15 +811,18 @@ int main(int argc, char** argv)
 
                                 //toggle play
                                 if ( !session->is_playing_file() ) {
-                                    session->play_id(cfg.id);
-                                    last_playing_id = cfg.id;
+
+                                    if ( session->play_id(cfg.id) ) {
+                                        last_playing_id = cfg.id;
+                                    }
                                 } else if(last_playing_id == cfg.id) {
                                     session->stop_file();
                                     last_playing_id = -1;
                                 } else {
                                     session->stop_file();
-                                    session->play_id(cfg.id);
-                                    last_playing_id = cfg.id;
+                                    if ( session->play_id(cfg.id) ) {
+                                        last_playing_id = cfg.id;
+                                    }
                                 }
 
                                 if ( is_shift_down ) { // range select
@@ -871,7 +874,18 @@ int main(int argc, char** argv)
                                 int arcs = decode_ongoing?2:1;
                                 
                                 ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
-                            }else {
+                            } else if(  last_playing_id == cfg.id ) {
+                                ImGui::SameLine();
+                                float r = ImGui::GetFrameHeight() * 0.5f;
+                                auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+                                float cell_width = ImGui::GetContentRegionAvail().x;
+                                float offset_x = cell_width* 0.5f - r;
+                                if (offset_x > 0.0f) {
+                                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
+                                }
+                                ImSpinner::SpinnerBarChartRainbow("playing", r, 2.0f, color, 4.0f);
+
+                            } else {
                                 auto text = cfg.done?"done":"todo";
                                 if ( ImGui::Selectable(text) ) {
                                     ImGui::OpenPopup("my_done_popup");
