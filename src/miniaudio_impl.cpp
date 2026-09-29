@@ -267,6 +267,7 @@ private:
         std::lock_guard<std::mutex> lock(self->mutex_);
         
         self->cursor_ = (frame_index > self->total_frames_) ? self->total_frames_ : frame_index;
+        self->close_current_decoder_nolock();
         return MA_SUCCESS;
     }
 
@@ -320,8 +321,8 @@ public:
         return (MA_SUCCESS == ma_sound_stop(&sound_));
     }
     bool stop() {
-        bool ret = (MA_SUCCESS == ma_sound_seek_to_pcm_frame(&sound_, 0));
-             ret &= (MA_SUCCESS == ma_sound_stop(&sound_));
+        bool ret = (MA_SUCCESS == ma_sound_stop(&sound_));
+             ret &= (MA_SUCCESS == ma_sound_seek_to_pcm_frame(&sound_, 0));
         return ret;
     }
 };
@@ -517,10 +518,8 @@ void MiniAudio::export_audio( int max_length_sec, const char* export_path ) {
             int length = ( n >= parts ) ? final_len : max_frames;
             buffer.resize(length);
 
-            if ( n ) {
-                result = ma_data_source_seek_pcm_frames(tracks_->get_ma_data_source(), n * max_frames, &frames_seeked);
-                if (result != MA_SUCCESS) { break; }
-            }
+            result = ma_data_source_seek_pcm_frames(tracks_->get_ma_data_source(), n * max_frames, &frames_seeked);
+            if (result != MA_SUCCESS) { break; }
             
             result = ma_data_source_read_pcm_frames(tracks_->get_ma_data_source(), buffer.data(), length, &frames_read);
             if (result != MA_SUCCESS) { break; }
