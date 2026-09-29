@@ -482,6 +482,9 @@ int main(int argc, char** argv)
                                 if ( ImGui::BeginMenu("export") ) {
                                     ImGui::DragFloat("max audio length(second)", &max_length_sec, 1.0f, 1.0f, 0.0f);
                                     if ( ImGui::Button("export") ) {
+                                        if ( session->is_playing_list() ) {
+                                            session->stop_playlist();
+                                        }
                                         session->export_audio(max_length_sec);
                                     }
                                     ImGui::EndMenu();

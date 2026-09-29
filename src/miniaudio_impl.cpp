@@ -298,10 +298,11 @@ class MiniAudio::TrackPlayer{
     ma_engine engine_;
     ma_sound sound_;
     Tracks& tracks_;
+    bool initialized_;
 public:
-    explicit TrackPlayer(Tracks& tracks) : engine_(), sound_(), tracks_(tracks) {
-        ma_engine_init(NULL, &engine_);
-        ma_sound_init_from_data_source(&engine_, tracks.get_ma_data_source(), 0, NULL, &sound_);
+    explicit TrackPlayer(Tracks& tracks) : engine_(), sound_(), tracks_(tracks), initialized_(false) {
+        initialized_ = (ma_engine_init(NULL, &engine_) == MA_SUCCESS);
+        initialized_ &= (ma_sound_init_from_data_source(&engine_, tracks.get_ma_data_source(), 0, NULL, &sound_) == MA_SUCCESS);
     }
     ~TrackPlayer() {
         ma_sound_uninit(&sound_);
@@ -309,18 +310,24 @@ public:
     }
 
     bool is_playing() {
+        if ( !initialized_ ) return false;
+
         return ma_sound_is_playing(&sound_);
     }
 
     bool play() {
-        bool ret = (MA_SUCCESS == ma_sound_seek_to_pcm_frame(&sound_, 0));
-             ret &= (MA_SUCCESS == ma_sound_start(&sound_));
-        return ret;
+        if ( !initialized_ ) return false;
+
+        return (MA_SUCCESS == ma_sound_start(&sound_));
     }
+
     bool pause() {
+        if ( !initialized_ ) return false;
         return (MA_SUCCESS == ma_sound_stop(&sound_));
     }
+
     bool stop() {
+        if ( !initialized_ ) return false;
         bool ret = (MA_SUCCESS == ma_sound_stop(&sound_));
              ret &= (MA_SUCCESS == ma_sound_seek_to_pcm_frame(&sound_, 0));
         return ret;
@@ -504,7 +511,6 @@ size_t MiniAudio::track_count() {
 void MiniAudio::export_audio( int max_length_sec, const char* export_path ) {
     ma_result result;
     ma_uint64 frames_read;
-    ma_uint64 frames_seeked;
     ma_uint64 max_frames = max_length_sec * 44100U * 1;
     ma_uint64 len = tracks_->buffer_length();
 
@@ -518,9 +524,9 @@ void MiniAudio::export_audio( int max_length_sec, const char* export_path ) {
             int length = ( n >= parts ) ? final_len : max_frames;
             buffer.resize(length);
 
-            result = ma_data_source_seek_pcm_frames(tracks_->get_ma_data_source(), n * max_frames, &frames_seeked);
+            result = ma_data_source_seek_to_pcm_frame(tracks_->get_ma_data_source(), n * max_frames);
             if (result != MA_SUCCESS) { break; }
-            
+
             result = ma_data_source_read_pcm_frames(tracks_->get_ma_data_source(), buffer.data(), length, &frames_read);
             if (result != MA_SUCCESS) { break; }
 
