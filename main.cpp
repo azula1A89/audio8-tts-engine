@@ -307,7 +307,6 @@ int main(int argc, char** argv)
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
-    // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / 
     
     ImGuiTheme::ImGuiTheme_ theme = ImGuiTheme::ImGuiTheme_ImGuiColorsClassic;
     ImGuiTheme::ApplyTweakedTheme(theme);
@@ -320,11 +319,6 @@ int main(int argc, char** argv)
 
     ImGuiStyle& style = ImGui::GetStyle();
     style.FontScaleDpi = std::max(xscale, yscale);
-    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-    {
-        style.WindowRounding = 0.0f;
-        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-    }
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(main_window, true);
@@ -528,7 +522,7 @@ int main(int argc, char** argv)
 
                         // play tracks
                         {
-                            imgui_scoped::Disabled disable( session->is_playing_file() );
+                            // imgui_scoped::Disabled disable( session->is_playing_file() );
                             std::string status_txt = session->is_playing_list() ? "stop":"play";
                             if ( ImGui::MenuItem(status_txt.c_str()) ) {
                                 if( !session->is_playing_list() ) {
@@ -982,14 +976,6 @@ int main(int argc, char** argv)
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-        {
-            GLFWwindow* backup_current_context = glfwGetCurrentContext();
-            ImGui::UpdatePlatformWindows();
-            ImGui::RenderPlatformWindowsDefault();
-            glfwMakeContextCurrent(backup_current_context);
-        }
-
         glfwSwapBuffers(main_window);
 
     }
