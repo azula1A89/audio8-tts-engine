@@ -313,14 +313,15 @@ public:
 
     bool play() {
         bool ret = (MA_SUCCESS == ma_sound_seek_to_pcm_frame(&sound_, 0));
-        return (MA_SUCCESS == ma_sound_start(&sound_));
+             ret &= (MA_SUCCESS == ma_sound_start(&sound_));
+        return ret;
     }
     bool pause() {
         return (MA_SUCCESS == ma_sound_stop(&sound_));
     }
     bool stop() {
         bool ret = (MA_SUCCESS == ma_sound_seek_to_pcm_frame(&sound_, 0));
-             ret |= (MA_SUCCESS == ma_sound_stop(&sound_));
+             ret &= (MA_SUCCESS == ma_sound_stop(&sound_));
         return ret;
     }
 };
