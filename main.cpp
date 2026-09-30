@@ -14,6 +14,7 @@
 #include <future>
 #include <imspinner_compat.h>
 #include <imspinner_text.h>
+#include <imgui_markdown.h>
 #include <ctime>
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -46,6 +47,25 @@ models/
 └── registration/
     ├── codec_encoder_fp16.onnx
     └── codec_encoder_fp16.onnx.data
+)";
+
+const std::string help_text = R"(
+tips:
+___
+  * step 1: start a new session or open an existing one.
+  * step 2: paste the text you want to convert to speech.
+  * step 3: click the table header "segment [20 token limit]" to adjust the segment length. then click "update segmention" to split the text into segments.
+  * step 4: optional, you can edit the text or voice settings for each segment as needed.
+  * step 5: click "run" to start the text-to-speech conversion process.
+  * step 6: once the conversion is complete, you can export the audio files for further use.
+___
+segment table:
+  * click the table header "segment [20 token limit]" to adjust the segment length.
+  * click "update segmention" to apply the changes.(this will override the whole segmention table)
+  * after updating the segment length, you can manually adjust individual segments if needed.
+  * you can also delete segments by selecting them and press the delete key.
+  * to select multiple segments, hold the left-shift key while clicking on the segments you want to select.
+
 )";
 
 class Session {
@@ -325,6 +345,8 @@ int main(int argc, char** argv)
     ImGui_ImplGlfw_InitForOpenGL(main_window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
+    ImGui::MarkdownConfig md_config{ NULL, NULL, NULL, NULL, { { english, true }, { english, true }, { english, false } }, NULL };
+
     const int popup_spinner_flag = ImGuiWindowFlags_NoDecoration 
                              | ImGuiWindowFlags_NoMove 
                              | ImGuiWindowFlags_NoBackground;
@@ -450,6 +472,7 @@ int main(int argc, char** argv)
                 imgui_scoped::Disabled disable(is_loading);
                 if (ImGui::BeginMenuBar()) {
 
+                    // session, export
                    {
                         imgui_scoped::Disabled disable(engine->is_busy());
                         if (ImGui::BeginMenu("session")) {
@@ -491,6 +514,7 @@ int main(int argc, char** argv)
                         }
                     }
 
+                    // run, cancle
                     {
                         imgui_scoped::Disabled disable(session == nullptr);
                         std::string status_text = engine->is_busy() ? "cancle" : "run";
@@ -533,6 +557,7 @@ int main(int argc, char** argv)
                         }
 
                     }
+
                     // voice registration (voice clone)
                     {
                         imgui_scoped::Disabled disable( is_loading );
@@ -602,6 +627,17 @@ int main(int argc, char** argv)
                         ImGui::EndMenu();
                     }
 
+                    // help, about
+                    if (ImGui::BeginMenu("help")) 
+                    {
+                        static ImVec2 md_size = {900, 500};
+
+                        if ( imgui_scoped::Child help = imgui_scoped::Child("help", md_size) ) {
+                            ImGui::Markdown(help_text.c_str(), help_text.length(), md_config);
+                        }
+                        ImGui::EndMenu();
+                    }
+
                     ImGui::EndMenuBar();
                 }
             }
@@ -651,7 +687,7 @@ int main(int argc, char** argv)
                 }
             }
 
-            // Text input
+            // Text input + chunk info table
             if( is_initialized  && session) {
                 static bool enable_edit_trigger = false;
                 static int last_segment_max_token = -1;
@@ -687,9 +723,8 @@ int main(int argc, char** argv)
                         return engine->split_text_by_tokens(txt, segment_max_token);
                     });
                 }
-
-                ImGui::BeginChild("##chunk info");
-                {
+                
+                if( imgui_scoped::Child chunk_info = imgui_scoped::Child("##chunk info") ) {
                     ImGuiTableColumnFlags table_flags = 0//ImGuiTableFlags_Borders
                                     | ImGuiTableFlags_ScrollY
                                     | ImGuiTableFlags_RowBg;
@@ -698,228 +733,229 @@ int main(int argc, char** argv)
                                     | ImGuiSelectableFlags_AllowOverlap;
                     ImGuiTableColumnFlags column_flags = ImGuiTableColumnFlags_WidthFixed;
 
-                    imgui_scoped::Table table("##chunk table", 4, table_flags);
                     imgui_scoped::StyleVar f_padding(ImGuiStyleVar_FramePadding, {0.0f, 0.0f});
                     imgui_scoped::StyleVar s_txt_align(ImGuiStyleVar_SelectableTextAlign, {0.5f, 0.5f});
 
-                    float ax = ImGui::GetContentRegionAvail().x;
-                    ImGui::TableSetupColumn("seq", column_flags, 0.04f * ax);
-                    ImGui::TableSetupColumn("text", column_flags, 0.8f * ax );
-                    ImGui::TableSetupColumn("status", column_flags, 0.06f * ax);
-                    ImGui::TableSetupColumn("options", column_flags, 0.1f * ax);
-                    ImGui::TableSetupScrollFreeze(0, 1);
-                    ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+                    if(imgui_scoped::Table table = imgui_scoped::Table("##chunk table", 4, table_flags)){
+                        float ax = ImGui::GetContentRegionAvail().x;
+                        ImGui::TableSetupColumn("seq", column_flags, 0.04f * ax);
+                        ImGui::TableSetupColumn("text", column_flags, 0.8f * ax );
+                        ImGui::TableSetupColumn("status", column_flags, 0.06f * ax);
+                        ImGui::TableSetupColumn("options", column_flags, 0.1f * ax);
+                        ImGui::TableSetupScrollFreeze(0, 1);
+                        ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
 
-                    // column 0
-                    ImGui::TableSetColumnIndex(0);
-                    imgui_scoped::TableTextCentered("seq");
+                        // column 0
+                        ImGui::TableSetColumnIndex(0);
+                        imgui_scoped::TableTextCentered("seq");
 
-                    // column 1
-                    ImGui::TableSetColumnIndex(1);
-                    auto str = fmt::format("segment: [ {} token limit ]", segment_max_token);
-                    if(ImGui::Selectable(str.c_str())) {
-                        ImGui::OpenPopup("my_segment_popup");
-                    }
-
-                    if (ImGui::BeginPopup("my_segment_popup")) {
-                        uint32_t step = 1;
-                        ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step);
-                        segment_max_token = std::max(10U, segment_max_token);
-                        ImGui::Checkbox("edit trigger segmention", &enable_edit_trigger);
-                        if ( ImGui::Button("update segmention", {-1,0}) ) {
-                            btn_update_segmention = true;
+                        // column 1
+                        ImGui::TableSetColumnIndex(1);
+                        auto str = fmt::format("segment: [ {} token limit ]", segment_max_token);
+                        if(ImGui::Selectable(str.c_str())) {
+                            ImGui::OpenPopup("my_segment_popup");
                         }
-                        ImGui::EndPopup();
-                    }
 
-                    // column 2
-                    ImGui::TableSetColumnIndex(2);
-                    if(ImGui::Selectable("status")) {
-                        ImGui::OpenPopup("my_status_popup");
-                    }
-
-                    if (ImGui::BeginPopup("my_status_popup")) {
-                        if ( ImGui::MenuItem("done") ) {
-                            session->set_done_value(true);
-                        }
-                        if ( ImGui::MenuItem("todo") ) {
-                            session->set_done_value(false);
-                        }
-                        ImGui::EndPopup();
-                    }
-
-                    // column 3
-                    ImGui::TableSetColumnIndex(3);
-                    if(ImGui::Selectable("option")) {
-                        ImGui::OpenPopup("my_option_popup");
-                    }
-
-                    if (ImGui::BeginPopup("my_option_popup")) {
-                        for (const auto& voice : voices ) {
-                            if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
-                                default_voice = voice;
-                                session->set_default_voice(default_voice);
+                        if (ImGui::BeginPopup("my_segment_popup")) {
+                            uint32_t step = 1;
+                            ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step);
+                            segment_max_token = std::max(10U, segment_max_token);
+                            ImGui::Checkbox("edit trigger segmention", &enable_edit_trigger);
+                            if ( ImGui::Button("update segmention", {-1,0}) ) {
+                                btn_update_segmention = true;
                             }
+                            ImGui::EndPopup();
                         }
-                        ImGui::EndPopup();
-                    }
 
-                     
+                        // column 2
+                        ImGui::TableSetColumnIndex(2);
+                        if(ImGui::Selectable("status")) {
+                            ImGui::OpenPopup("my_status_popup");
+                        }
 
-                    imgui_scoped::StyleVar s_var(ImGuiStyleVar_SelectableRounding, 12.0f);
-
-                    ImGuiListClipper clipper;
-                    clipper.Begin(session->configs().size());
-
-                    static int last_playing_id = -1;
-                    static int last_selected_seq = -1;
-                    static int edit_select_id = -1;
-                    size_t num = session->track_count();
-
-                    bool is_shift_down = ImGui::IsKeyDown(ImGuiKey_LeftShift);
-                    bool is_delete_down = ImGui::IsKeyDown(ImGuiKey_Delete);
-                    if ( disable_edit ) {
-                        session->unselected_all();
-                    }
-
-                    while (clipper.Step()) {
-                        for (int seq = clipper.DisplayStart; seq < clipper.DisplayEnd; seq++) {
-                            auto& cfg = session->configs()[seq];
-                            bool generate_ongoing = ( cfg.id == generate_id );
-                                 generate_ongoing &= engine->is_busy();
-                            bool decode_ongoing = ( cfg.id == decode_id );
-                                 decode_ongoing &= engine->is_decoding();
-                            bool selected = generate_ongoing;
-                                selected |= ( cfg.selected );
-
-                            if ( generate_ongoing ) {
-                                ImGui::SetScrollHereY(0.5f);
+                        if (ImGui::BeginPopup("my_status_popup")) {
+                            if ( ImGui::MenuItem("done") ) {
+                                session->set_done_value(true);
                             }
+                            if ( ImGui::MenuItem("todo") ) {
+                                session->set_done_value(false);
+                            }
+                            ImGui::EndPopup();
+                        }
 
-                            imgui_scoped::ID id(seq);
-                            ImGui::TableNextRow();
+                        // column 3
+                        ImGui::TableSetColumnIndex(3);
+                        if(ImGui::Selectable("option")) {
+                            ImGui::OpenPopup("my_option_popup");
+                        }
 
-                            ImGui::TableSetColumnIndex(0); 
-                            if(ImGui::Selectable(std::to_string(cfg.id).c_str(), selected, select_flags)) {
+                        if (ImGui::BeginPopup("my_option_popup")) {
+                            for (const auto& voice : voices ) {
+                                if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
+                                    default_voice = voice;
+                                    session->set_default_voice(default_voice);
+                                }
+                            }
+                            ImGui::EndPopup();
+                        }
 
-                                //toggle play
-                                if ( !session->is_playing_file() ) {
+                        
 
-                                    if ( session->play_id(cfg.id) ) {
-                                        last_playing_id = cfg.id;
-                                    }
-                                } else if(last_playing_id == cfg.id) {
-                                    session->stop_file();
-                                    last_playing_id = -1;
-                                } else {
-                                    session->stop_file();
-                                    if ( session->play_id(cfg.id) ) {
-                                        last_playing_id = cfg.id;
-                                    }
+                        imgui_scoped::StyleVar s_var(ImGuiStyleVar_SelectableRounding, 12.0f);
+
+                        ImGuiListClipper clipper;
+                        clipper.Begin(session->configs().size());
+
+                        static int last_playing_id = -1;
+                        static int last_selected_seq = -1;
+                        static int edit_select_id = -1;
+                        size_t num = session->track_count();
+
+                        bool is_shift_down = ImGui::IsKeyDown(ImGuiKey_LeftShift);
+                        bool is_delete_down = ImGui::IsKeyDown(ImGuiKey_Delete);
+                        if ( disable_edit ) {
+                            session->unselected_all();
+                        }
+
+                        while (clipper.Step()) {
+                            for (int seq = clipper.DisplayStart; seq < clipper.DisplayEnd; seq++) {
+                                auto& cfg = session->configs()[seq];
+                                bool generate_ongoing = ( cfg.id == generate_id );
+                                    generate_ongoing &= engine->is_busy();
+                                bool decode_ongoing = ( cfg.id == decode_id );
+                                    decode_ongoing &= engine->is_decoding();
+                                bool selected = generate_ongoing;
+                                    selected |= ( cfg.selected );
+
+                                if ( generate_ongoing ) {
+                                    ImGui::SetScrollHereY(0.5f);
                                 }
 
-                                if ( is_shift_down ) { // range select
-                                    if( last_selected_seq >= 0 ) {
-                                        int start = std::min(last_selected_seq, (int)seq);
-                                        int end = std::max(last_selected_seq, (int)seq);
+                                imgui_scoped::ID id(seq);
+                                ImGui::TableNextRow();
 
-                                        session->unselected_all();
-                                        for (size_t j = start; j <= end; j++) {
-                                            session->configs()[j].selected = true;
+                                ImGui::TableSetColumnIndex(0); 
+                                if(ImGui::Selectable(std::to_string(cfg.id).c_str(), selected, select_flags)) {
+
+                                    //toggle play
+                                    if ( !session->is_playing_file() ) {
+
+                                        if ( session->play_id(cfg.id) ) {
+                                            last_playing_id = cfg.id;
+                                        }
+                                    } else if(last_playing_id == cfg.id) {
+                                        session->stop_file();
+                                        last_playing_id = -1;
+                                    } else {
+                                        session->stop_file();
+                                        if ( session->play_id(cfg.id) ) {
+                                            last_playing_id = cfg.id;
                                         }
                                     }
-                                } else {
-                                    last_selected_seq = seq;
-                                    session->unselected_all();
-                                    session->configs()[seq].selected = true;
-                                }
-                            }
 
-                            if (ImGui::IsItemFocused()) {
-                                if (ImGui::IsMouseDoubleClicked(0)) {
-                                    edit_select_id = last_selected_seq;
-                                }
-                            }
+                                    if ( is_shift_down ) { // range select
+                                        if( last_selected_seq >= 0 ) {
+                                            int start = std::min(last_selected_seq, (int)seq);
+                                            int end = std::max(last_selected_seq, (int)seq);
 
-                            if ( edit_select_id != last_selected_seq ) {
-                                edit_select_id = -1;
-                            }
-
-                            ImGui::TableSetColumnIndex(1);
-                            if ( edit_select_id == cfg.id ) {
-                                ImGui::SetNextItemWidth(0.77f * ax);
-                                ImGui::InputText("##text", &cfg.text);
-                            } else {
-                                imgui_scoped::TableTextCentered(cfg.text.c_str());
-                            }
-
-                            ImGui::TableSetColumnIndex(2);
-
-                            if ( decode_ongoing || generate_ongoing ) {
-                                ImGui::SameLine();
-                                float r = ImGui::GetFrameHeight() * 0.5f;
-                                auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
-                                float cell_width = ImGui::GetContentRegionAvail().x;
-                                float offset_x = cell_width* 0.5f - r;
-                                if (offset_x > 0.0f) {
-                                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
-                                }
-                                int arcs = decode_ongoing?2:1;
-                                
-                                ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
-                            } else if(  last_playing_id == cfg.id ) {
-                                ImGui::SameLine();
-                                float r = ImGui::GetFrameHeight() * 0.5f;
-                                auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
-                                float cell_width = ImGui::GetContentRegionAvail().x;
-                                float offset_x = cell_width* 0.5f - r;
-                                if (offset_x > 0.0f) {
-                                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
-                                }
-                                ImSpinner::SpinnerBarChartRainbow("playing", r, 2.0f, color, 4.0f);
-
-                            } else {
-                                auto text = cfg.done?"done":"todo";
-                                if ( ImGui::Selectable(text) ) {
-                                    ImGui::OpenPopup("my_done_popup");
-                                }
-
-                                if (ImGui::BeginPopup("my_done_popup")) {
-                                    if ( ImGui::MenuItem("done") ) {
-                                        cfg.done = true;
+                                            session->unselected_all();
+                                            for (size_t j = start; j <= end; j++) {
+                                                session->configs()[j].selected = true;
+                                            }
+                                        }
+                                    } else {
+                                        last_selected_seq = seq;
+                                        session->unselected_all();
+                                        session->configs()[seq].selected = true;
                                     }
-                                    if ( ImGui::MenuItem("todo") ) {
-                                        cfg.done = false;
+                                }
+
+                                if (ImGui::IsItemFocused()) {
+                                    if (ImGui::IsMouseDoubleClicked(0)) {
+                                        edit_select_id = last_selected_seq;
+                                    }
+                                }
+
+                                if ( edit_select_id != last_selected_seq ) {
+                                    edit_select_id = -1;
+                                }
+
+                                ImGui::TableSetColumnIndex(1);
+                                if ( edit_select_id == cfg.id ) {
+                                    ImGui::SetNextItemWidth(0.77f * ax);
+                                    ImGui::InputText("##text", &cfg.text);
+                                } else {
+                                    imgui_scoped::TableTextCentered(cfg.text.c_str());
+                                }
+
+                                ImGui::TableSetColumnIndex(2);
+
+                                if ( decode_ongoing || generate_ongoing ) {
+                                    ImGui::SameLine();
+                                    float r = ImGui::GetFrameHeight() * 0.5f;
+                                    auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+                                    float cell_width = ImGui::GetContentRegionAvail().x;
+                                    float offset_x = cell_width* 0.5f - r;
+                                    if (offset_x > 0.0f) {
+                                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
+                                    }
+                                    int arcs = decode_ongoing?2:1;
+                                    
+                                    ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
+                                } else if(  last_playing_id == cfg.id ) {
+                                    ImGui::SameLine();
+                                    float r = ImGui::GetFrameHeight() * 0.5f;
+                                    auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+                                    float cell_width = ImGui::GetContentRegionAvail().x;
+                                    float offset_x = cell_width* 0.5f - r;
+                                    if (offset_x > 0.0f) {
+                                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
+                                    }
+                                    ImSpinner::SpinnerBarChartRainbow("playing", r, 2.0f, color, 4.0f);
+
+                                } else {
+                                    auto text = cfg.done?"done":"todo";
+                                    if ( ImGui::Selectable(text) ) {
+                                        ImGui::OpenPopup("my_done_popup");
+                                    }
+
+                                    if (ImGui::BeginPopup("my_done_popup")) {
+                                        if ( ImGui::MenuItem("done") ) {
+                                            cfg.done = true;
+                                        }
+                                        if ( ImGui::MenuItem("todo") ) {
+                                            cfg.done = false;
+                                        }
+                                        ImGui::EndPopup();
+                                    }
+                                }
+
+                                ImGui::TableSetColumnIndex(3);
+                                if ( ImGui::Selectable(cfg.voice.c_str()) ) {
+                                    ImGui::OpenPopup("my_voices_popup");
+                                }
+
+                                if (ImGui::BeginPopup("my_voices_popup")) {
+                                    for (int m = 0; m < voices.size(); m++) {
+                                        imgui_scoped::ID id(m);
+                                        if ( ImGui::MenuItem( voices[m].c_str(), NULL, cfg.voice == voices[m]) ) {
+                                            cfg.voice = voices[m];
+                                        }
                                     }
                                     ImGui::EndPopup();
                                 }
-                            }
 
-                            ImGui::TableSetColumnIndex(3);
-                            if ( ImGui::Selectable(cfg.voice.c_str()) ) {
-                                ImGui::OpenPopup("my_voices_popup");
                             }
-
-                            if (ImGui::BeginPopup("my_voices_popup")) {
-                                for (int m = 0; m < voices.size(); m++) {
-                                    imgui_scoped::ID id(m);
-                                    if ( ImGui::MenuItem( voices[m].c_str(), NULL, cfg.voice == voices[m]) ) {
-                                        cfg.voice = voices[m];
-                                    }
-                                }
-                                ImGui::EndPopup();
-                            }
-
                         }
-                    }
 
-                    if ( is_delete_down ) {
-                        last_selected_seq = -1;
-                        session->delete_selected();
+                        if ( is_delete_down ) {
+                            last_selected_seq = -1;
+                            session->delete_selected();
+                        }
+                        
                     }
-                    
                 }
-                ImGui::EndChild();
+
             }
 
             // Check if the cancellation operation has completed
@@ -972,13 +1008,18 @@ int main(int argc, char** argv)
 
             ImGui::End();
         }
-        
+
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(main_window);
     };
 
     glfwSetWindowRefreshCallback(main_window, [](GLFWwindow* window){
+        render_frame(window);
+    });
+
+    glfwSetFramebufferSizeCallback(main_window, [](GLFWwindow* window, int width, int height){
+        glViewport(0, 0, width, height);
         render_frame(window);
     });
 

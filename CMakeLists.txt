@@ -100,6 +100,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imspinner)
 
+FetchContent_Declare(
+    imgui_markdown
+    GIT_REPOSITORY https://github.com/enkisoftware/imgui_markdown
+    GIT_TAG        4acbf80584753e15ea54eb271129995862daac8f
+)
+
+FetchContent_MakeAvailable(imgui_markdown)
+
 if(NOT TARGET imgui)
     
     add_subdirectory(${glew_SOURCE_DIR}/build/cmake)
@@ -120,6 +128,7 @@ if(NOT TARGET imgui)
     target_include_directories(imgui PUBLIC ${glew_SOURCE_DIR}/include)
     target_include_directories(imgui PUBLIC ${glfw_SOURCE_DIR}/include)
     target_include_directories(imgui PUBLIC ${imspinner_SOURCE_DIR})
+    target_include_directories(imgui PUBLIC ${imgui_markdown_SOURCE_DIR})
     target_include_directories(imgui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/theme)
     target_link_libraries(imgui PUBLIC glew glfw ${OPENGL_LIBRARIES})
 endif()
