@@ -451,6 +451,7 @@ This project uses the following open-source components:
 - [glew](https://github.com/nigels-com/glew)
 - [glfw](https://github.com/glfw/glfw)
 - [imgui](https://github.com/ocornut/imgui)
+- [imgui_markdown](https://github.com/juliettef/imgui_markdown)
 - [imspinner](https://github.com/dalerank/imspinner)
 - [fmt](https://github.com/fmtlib/fmt)
 - [nlohmann/json](https://github.com/nlohmann/json)
@@ -475,6 +476,7 @@ Thanks to the authors and maintainers of:
 - glew
 - glfw
 - imgui
+- imgui_markdown
 - imspinner
 - fmt
 - nlohmann/json

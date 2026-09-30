@@ -38,37 +38,37 @@
 
 ```text
                  ┌──────────────────┐
-                 │     输入文本     │
+                 │     输入文本      │
                  └────────┬─────────┘
                           │
                           ▼
                  ┌──────────────────┐
                  │ TextProcessor    │
-                 │    文本处理      │
+                 │    文本处理       │
                  └────────┬─────────┘
                           │
                           ▼
-参考音色 ────────► ┌──────────────────┐
+参考音色   ────────► ┌──────────────────┐
                     │ PromptBuilder    │
-                    │   Prompt 构建    │
+                    │   Prompt  构建    │
                     └────────┬─────────┘
                              │
                              ▼
                     ┌──────────────────┐
                     │     Slow AR      │
-                    │   语义 Token     │
+                    │   语义 Token      │
                     └────────┬─────────┘
                              │
                              ▼
                     ┌──────────────────┐
                     │     Fast AR      │
-                    │  10 个音频 Codes │
+                    │  10 个音频 Codes  │
                     └────────┬─────────┘
                              │
                              ▼
                     ┌──────────────────┐
                     │  Codec Decoder   │
-                    │    Codec 解码    │
+                    │    Codec 解码     │
                     └────────┬─────────┘
                              │
                              ▼
@@ -478,6 +478,7 @@ Fast AR 同样拥有独立的 KV Cache。
 - [glew](https://github.com/nigels-com/glew)
 - [glfw](https://github.com/glfw/glfw)
 - [imgui](https://github.com/ocornut/imgui)
+- [imgui_markdown](https://github.com/juliettef/imgui_markdown)
 - [imspinner](https://github.com/dalerank/imspinner)
 - [fmt](https://github.com/fmtlib/fmt)
 - [nlohmann/json](https://github.com/nlohmann/json)
@@ -506,6 +507,7 @@ Fast AR 同样拥有独立的 KV Cache。
 - glew
 - glfw
 - imgui
+- imgui_markdown
 - imspinner
 - fmt
 - nlohmann/json
