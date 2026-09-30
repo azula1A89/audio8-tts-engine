@@ -282,6 +282,7 @@ public:
 std::string choose_folder();
 std::string choose_audio_path();
 void imgui_parent_window();
+std::function<void(GLFWwindow*)> render_frame;
 
 int main(int argc, char** argv)
 {
@@ -362,12 +363,7 @@ int main(int argc, char** argv)
     float decode_eta = -1.0f;
     std::atomic<int> request_done = 0;
 
-    // Main loop
-    while ( glfwWindowShouldClose(main_window) == GL_FALSE )
-    {
-        // Poll for and process events
-        glfwPollEvents();
-        
+    render_frame = [&](GLFWwindow* window){
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -976,12 +972,24 @@ int main(int argc, char** argv)
 
             ImGui::End();
         }
-
+        
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(main_window);
+    };
 
+    glfwSetWindowRefreshCallback(main_window, [](GLFWwindow* window){
+        render_frame(window);
+    });
+
+    // Main loop
+    while ( glfwWindowShouldClose(main_window) == GL_FALSE )
+    {
+        // Poll for and process events
+        glfwPollEvents();
+        render_frame(main_window);
     }
+
     if ( session ) {
         session.reset(nullptr);
     }
