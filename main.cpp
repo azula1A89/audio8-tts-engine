@@ -1,27 +1,38 @@
 #include "main.hpp"
+
+#include <algorithm>
+#include <cstring>
+#include <cstdlib>
+#include <ctime>
+#include <fstream>
+#include <future>
+#include <mutex>
+#include <queue>
+#include <stdio.h>
+#include <string>
+
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-#include <backends/imgui_impl_glfw.h>
-#include <backends/imgui_impl_opengl3.h>
-#include <imgui_theme.h>
-#include <imgui_stdlib.h>
+
+#include <fmt/chrono.h>
 #include <fmt/color.h>
 #include <fmt/ranges.h>
-#include <fmt/chrono.h>
+#include <nlohmann/json.hpp>
 #include <nfd.hpp>
-#include <audio8_engine.hpp>
-#include <text_processor.hpp>
-#include <future>
+
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_opengl3.h>
+#include <imgui_markdown.h>
+#include <imgui_stdlib.h>
+#include <imgui_theme.h>
+#include <imgui_internal.h>
 #include <imspinner_compat.h>
 #include <imspinner_text.h>
-#include <imgui_markdown.h>
-#include <ctime>
-#include <nlohmann/json.hpp>
-#include <fstream>
-#include <queue>
-#include <mutex>
-#include <algorithm>
+
 #include <miniaudio_impl.hpp>
+
+#include <audio8_engine.hpp>
+#include <text_processor.hpp>
 
 using namespace std::chrono_literals;
 using json = nlohmann::json;
@@ -68,6 +79,107 @@ segment table:
 
 )";
 
+class UserSettings {
+private:
+    struct settings_s {
+        std::string model_folder = "models";
+        std::string session_folder = "sessions";
+        std::string export_folder = "sessions";
+        std::string default_voice = "anthony";
+        float font_scale = 1.0f;
+        int theme = 0;
+        int export_length = 1200;
+        int export_sample_rate = 44100;
+        int segment_max_token = 25;
+        bool enable_automatic_segmentation_trigger = false;
+        int window_width = 1500;
+        int window_height = 610;
+    } settings_;
+
+public:
+    UserSettings() {}
+
+    static void* read_open_func(ImGuiContext* ctx, ImGuiSettingsHandler* handler, const char* name) {
+        // ImGui expects [TypeName][Name]. We use "Data" as the sub-name.
+        if (strcmp(name, "Data") == 0) {
+            return (void*)handler->UserData;
+        }
+        return nullptr;
+    }
+
+    static void read_line_func(ImGuiContext* ctx, ImGuiSettingsHandler* handler, void* entry, const char* line) {
+        settings_s* setting = static_cast<settings_s*>(entry);
+        
+        const char* eq_pos = strchr(line, '=');
+        if (!eq_pos) return;
+
+        std::string key(line, eq_pos - line);
+        std::string value(eq_pos + 1);
+
+        try {
+            if (key == "model_folder") setting->model_folder = value;
+            else if (key == "session_folder") setting->session_folder = value;
+            else if (key == "export_folder") setting->export_folder = value;
+            else if (key == "default_voice") setting->default_voice = value;
+            else if (key == "font_scale") setting->font_scale = std::stof(value);
+            else if (key == "theme") setting->theme = std::stoi(value);
+            else if (key == "export_length") setting->export_length = std::stoi(value);
+            else if (key == "export_sample_rate") setting->export_sample_rate = std::stoi(value);
+            else if (key == "segment_max_token") setting->segment_max_token = std::stoi(value);
+            else if (key == "enable_automatic_segmentation_trigger") setting->enable_automatic_segmentation_trigger = std::stoi(value) != 0;
+            else if (key == "window_width") setting->window_width = std::stoi(value);
+            else if (key == "window_height") setting->window_height = std::stoi(value);
+        } catch (const std::exception&) {
+            fmt::print("Failed to parse setting: {}\n", key);
+        }
+    }
+
+    static void write_all_func(ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf) {
+        settings_s* setting = static_cast<settings_s*>(handler->UserData);
+        
+        // ImGui expects [TypeName][Name]. We use "Data" as the sub-name.
+        buf->appendf("[%s][Data]\n", handler->TypeName);
+        
+        buf->appendf("model_folder=%s\n", setting->model_folder.c_str());
+        buf->appendf("session_folder=%s\n", setting->session_folder.c_str());
+        buf->appendf("export_folder=%s\n", setting->export_folder.c_str());
+        buf->appendf("default_voice=%s\n", setting->default_voice.c_str());
+        buf->appendf("font_scale=%.2f\n", setting->font_scale);
+        buf->appendf("theme=%d\n", setting->theme);
+        buf->appendf("export_length=%d\n", setting->export_length);
+        buf->appendf("export_sample_rate=%d\n", setting->export_sample_rate);
+        buf->appendf("segment_max_token=%d\n", setting->segment_max_token);
+        buf->appendf("enable_automatic_segmentation_trigger=%d\n", setting->enable_automatic_segmentation_trigger);
+        buf->appendf("window_width=%d\n", setting->window_width);
+        buf->appendf("window_height=%d\n", setting->window_height);
+        buf->append("\n"); 
+    }
+
+    void initialize() {
+        ImGuiSettingsHandler ini_handler;
+        ini_handler.TypeName = "UserSettings";
+        ini_handler.TypeHash = ImHashStr("UserSettings");
+        ini_handler.ReadOpenFn = read_open_func;
+        ini_handler.ReadLineFn = read_line_func;
+        ini_handler.WriteAllFn = write_all_func;
+        ini_handler.UserData = &settings_;
+        ImGui::AddSettingsHandler(&ini_handler);
+        ImGui::LoadIniSettingsFromDisk(ImGui::GetIO().IniFilename);
+    }
+
+    settings_s& get() {
+        return settings_;
+    }
+
+    // synchronize the settings with ImGui's INI file
+    void sync() {
+        ImGuiContext* ctx = ImGui::GetCurrentContext();
+        if (ctx) {
+            ImGui::MarkIniSettingsDirty();
+        }
+    }
+};
+
 class Session {
 public:
     struct config_item_s {
@@ -77,7 +189,7 @@ public:
         bool selected;
         bool done;
     };
-
+    
 private:
     std::filesystem::path root_;
     std::string cache_;
@@ -86,7 +198,7 @@ private:
     std::vector<config_item_s> configs_;
     std::queue<int> done_;
     std::mutex done_mutex_;
-
+    
 public:
     Session(std::filesystem::path root = "sessions", 
         std::string cache = fmt::format("{:%F_%H-%M-%S}", fmt::localtime(std::time(nullptr))), 
@@ -127,8 +239,8 @@ public:
         return session;
     }
 
-    void export_audio( const int& max_length_sec ) {
-        miniaudio_impl::export_audio(max_length_sec);
+    void export_audio( const int& max_length_sec, const char* path, uint32_t sample_rate = 44100U) {
+        miniaudio_impl::export_audio(max_length_sec, path, sample_rate);
     }
 
     size_t& request_count() {
@@ -303,6 +415,7 @@ std::string choose_folder();
 std::string choose_audio_path();
 void imgui_parent_window();
 std::function<void(GLFWwindow*)> render_frame;
+UserSettings settings;
 
 int main(int argc, char** argv)
 {
@@ -326,11 +439,14 @@ int main(int argc, char** argv)
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    settings.initialize();
+
+    glfwSetWindowSize(main_window, settings.get().window_width, settings.get().window_height);
+
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
     
-    ImGuiTheme::ImGuiTheme_ theme = ImGuiTheme::ImGuiTheme_ImGuiColorsClassic;
-    ImGuiTheme::ApplyTweakedTheme(theme);
+    ImGuiTheme::ApplyTweakedTheme(static_cast<ImGuiTheme::ImGuiTheme_>(settings.get().theme));
 
     auto cjk = io.Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf");
     auto english = io.Fonts->AddFontFromFileTTF("fonts/Cousine-Regular.ttf");
@@ -355,7 +471,7 @@ int main(int argc, char** argv)
     std::filesystem::path session_root_path = "sessions";
     std::string txt = "大家好，我是anthony。";
     std::vector<std::string> voices;
-    std::string default_voice = "anthony";
+    std::string& default_voice = settings.get().default_voice;
     std::string new_voice_name;
     std::string transcript;
     std::string ref_audio_path;
@@ -373,12 +489,6 @@ int main(int argc, char** argv)
     bool is_encoding = false;
     bool is_cancelling = false;
 
-    uint32_t channels = 1;
-    uint32_t max_audio_duration_sec = 1200;
-    uint32_t sample_rate = 44100;
-    uint32_t max_audio_frames = max_audio_duration_sec * sample_rate;
-    uint32_t segment_max_token = 20;
-    float max_length_sec = 1200;
     float generate_progress = 0.0f;
     int generate_id = -1;
     int decode_id = -1;
@@ -478,16 +588,19 @@ int main(int argc, char** argv)
                         if (ImGui::BeginMenu("session")) {
                             if ( ImGui::MenuItem("new") ) {
                                 if ( session ) {
-                                    session.reset(nullptr);
+                                    session.reset();
                                 }
                                 session = make_unique_nothrow<Session>();
                             }
 
                             if ( ImGui::BeginMenu("recent") ) {
+                                static std::string session_recent = "";
                                 if (std::filesystem::exists(session_root_path) && std::filesystem::is_directory(session_root_path)) {
                                     for (const auto& entry : std::filesystem::directory_iterator(session_root_path)) {
                                         if (entry.is_regular_file() && entry.path().extension() == ".json") {
-                                            if ( ImGui::MenuItem(entry.path().filename().string().c_str()) ) {
+                                            std::string filename = entry.path().filename().string();
+                                            if ( ImGui::MenuItem(filename.c_str(), nullptr, session_recent == filename) ) {
+                                                session_recent = filename;
                                                 session = Session::from_json(entry.path().string().c_str());
                                             }
                                         }
@@ -497,14 +610,38 @@ int main(int argc, char** argv)
                             }
 
                             {
+                                int& export_length = settings.get().export_length;
                                 imgui_scoped::Disabled disable(session == nullptr);
                                 if ( ImGui::BeginMenu("export") ) {
-                                    ImGui::DragFloat("max audio length(second)", &max_length_sec, 1.0f, 1.0f, 0.0f);
+                                    if (ImGui::DragInt("max audio length(second)", &export_length, 1.0f, 1)) {
+                                        settings.sync();
+                                    }
+
+                                    int& sample_rate = settings.get().export_sample_rate;
+                                    if (ImGui::DragInt("sample rate", &sample_rate, 100.0f, 8000, 96000)) {
+                                        settings.sync();
+                                    }
+
+                                    std::string folder = settings.get().export_folder;
+                                    if (ImGui::InputTextWithHint("##export to folder", "export to folder", &folder)) {
+                                        if (!folder.empty() && std::filesystem::exists(folder) && std::filesystem::is_directory(folder)) {
+                                            settings.get().export_folder = folder;
+                                            settings.sync();
+                                        }
+                                    }
+                                    ImGui::SameLine();
+                                    if (ImGui::Button("choose folder")) {
+                                        folder = choose_folder();
+                                        if (!folder.empty() && std::filesystem::exists(folder) && std::filesystem::is_directory(folder)) {
+                                            settings.get().export_folder = folder;
+                                            settings.sync();
+                                        }
+                                    }
                                     if ( ImGui::Button("export") ) {
                                         if ( session->is_playing_list() ) {
                                             session->stop_playlist();
                                         }
-                                        session->export_audio(max_length_sec);
+                                        session->export_audio(export_length, settings.get().export_folder.c_str(), sample_rate);
                                     }
                                     ImGui::EndMenu();
                                 }
@@ -596,23 +733,27 @@ int main(int argc, char** argv)
                     if (ImGui::BeginMenu("settings")) {
 
                         if(ImGui::BeginMenu("user interface")) {
-
-                            ImGui::DragFloat("font scale", &ImGui::GetStyle().FontScaleMain, 0.01f, 0.2f, 3.0f);
+                            float& font_scale = settings.get().font_scale;
+                            if (ImGui::DragFloat("font scale", &font_scale, 0.01f, 0.2f, 3.0f)) {
+                                ImGui::GetStyle().FontScaleMain = font_scale;
+                                settings.sync();
+                            }
 
                             // ImGuiIO& io = ImGui::GetIO();
                             // ImFontAtlas* atlas = io.Fonts;
                             // ImGui::ShowFontAtlas(atlas);
-
-                            if( ImGui::BeginCombo("theme", ImGuiTheme::ImGuiTheme_Name(theme)) ) {
+                            int& theme = settings.get().theme;
+                            if( ImGui::BeginCombo("theme", ImGuiTheme::ImGuiTheme_Name(static_cast<ImGuiTheme::ImGuiTheme_>(theme))) ) {
                                 for (int i = 0; i< ImGuiTheme::ImGuiTheme_Count; i++) {
                                     imgui_scoped::ID id(i);
                                     
                                     if(ImGui::Selectable(ImGuiTheme::ImGuiTheme_Name((ImGuiTheme::ImGuiTheme_)i), theme == i)) {
                                         theme = (ImGuiTheme::ImGuiTheme_)i;
+                                        settings.sync();
                                         float size1 = ImGui::GetStyle().FontSizeBase;
                                         float size2 = ImGui::GetStyle().FontScaleDpi;
                                         float size3 = ImGui::GetStyle().FontScaleMain;
-                                        ImGuiTheme::ApplyTweakedTheme(theme);
+                                        ImGuiTheme::ApplyTweakedTheme(static_cast<ImGuiTheme::ImGuiTheme_>(theme));
                                         ImGui::GetStyle().FontSizeBase = size1;
                                         ImGui::GetStyle().FontScaleDpi = size2;
                                         ImGui::GetStyle().FontScaleMain = size3;
@@ -689,6 +830,7 @@ int main(int argc, char** argv)
 
             // Text input + chunk info table
             if( is_initialized  && session) {
+                int& segment_max_token = settings.get().segment_max_token;
                 static bool enable_edit_trigger = false;
                 static int last_segment_max_token = -1;
                 static int last_edit_count = -1;
@@ -758,8 +900,11 @@ int main(int argc, char** argv)
 
                         if (ImGui::BeginPopup("my_segment_popup")) {
                             uint32_t step = 1;
-                            ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step);
-                            segment_max_token = std::max(10U, segment_max_token);
+                            if (ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step)) {
+                                segment_max_token = std::max(5, segment_max_token);
+                                settings.sync();
+                            }
+                            
                             ImGui::Checkbox("edit trigger segmention", &enable_edit_trigger);
                             if ( ImGui::Button("update segmention", {-1,0}) ) {
                                 btn_update_segmention = true;
@@ -794,6 +939,7 @@ int main(int argc, char** argv)
                                 if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
                                     default_voice = voice;
                                     session->set_default_voice(default_voice);
+                                    settings.sync();
                                 }
                             }
                             ImGui::EndPopup();
@@ -1019,6 +1165,9 @@ int main(int argc, char** argv)
     });
 
     glfwSetFramebufferSizeCallback(main_window, [](GLFWwindow* window, int width, int height){
+        settings.get().window_width = width;
+        settings.get().window_height = height;
+        settings.sync();
         glViewport(0, 0, width, height);
         render_frame(window);
     });
@@ -1032,7 +1181,7 @@ int main(int argc, char** argv)
     }
 
     if ( session ) {
-        session.reset(nullptr);
+        session.reset();
     }
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
