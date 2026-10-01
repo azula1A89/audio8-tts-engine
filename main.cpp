@@ -1,3 +1,28 @@
+/*
+MIT License
+
+Copyright (c) [2026] [azula1A89]
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+
 #include "main.hpp"
 
 #include <algorithm>
@@ -38,6 +63,7 @@ using namespace std::chrono_literals;
 using json = nlohmann::json;
 const char* model_info = "This project using the following model:";
 const char* model_url = "https://huggingface.co/Edge0/Audio8-TTS-Preview-0.6B-ONNX-INT4/tree/main";
+const char* backup_url = "https://modelscope.ai/models/Edge0/Audio8-TTS-Preview-0.6B-ONNX-INT4/files";
 const char* model_folder = R"(
 The expected model directory is:
 
@@ -76,11 +102,6 @@ segment table:
   * after updating the segment length, you can manually adjust individual segments if needed.
   * you can also delete segments by selecting them and press the delete key.
   * to select multiple segments, hold the left-shift key while clicking on the segments you want to select.
-___
-about:
-  * [source] (https://github.com/azula1A89/audio8-tts-engine.git)
-  * [model 1] (https://huggingface.co/Edge0/Audio8-TTS-Preview-0.6B-ONNX-INT4/tree/main)
-  * [model 2] (https://modelscope.ai/models/Edge0/Audio8-TTS-Preview-0.6B-ONNX-INT4/files)
 )";
 
 class UserSettings {
@@ -166,7 +187,7 @@ public:
         buf->appendf("fast_ar_thread_num=%d\n", setting->runtime_config.fast_ar_thread_num);
         buf->appendf("codec_encoder_thread_num=%d\n", setting->runtime_config.codec_encoder_thread_num);
         buf->appendf("codec_decoder_thread_num=%d\n", setting->runtime_config.codec_decoder_thread_num);
-        buf->appendf("execution_provider=%d\n", setting->runtime_config.execution_provider);
+        buf->appendf("execution_provider=%d\n", static_cast<int>(setting->runtime_config.execution_provider));
         buf->append("\n"); 
     }
 
@@ -848,6 +869,14 @@ int main(int argc, char** argv)
                         static ImVec2 md_size = {900, 500};
 
                         if ( imgui_scoped::Child help = imgui_scoped::Child("help", md_size) ) {
+                            ImGui::Text("You can download model from:");
+                            {
+                                imgui_scoped::Indent indent;
+                                imgui_scoped::FontSize font_size(14.0f);
+                                ImGui::TextLinkOpenURL(model_url);
+                                ImGui::TextLinkOpenURL(backup_url);
+                            }
+
                             ImGui::Markdown(help_text.c_str(), help_text.length(), md_config);
                         }
                         ImGui::EndMenu();
