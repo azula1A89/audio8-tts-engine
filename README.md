@@ -35,8 +35,8 @@ Pre-built binaries are available on the releases page:
 - WAV output and local audio playback through miniaudio
 - CMake-based build
 - Automatic fetching of major C++ dependencies through CMake `FetchContent`
-[![Watch the video](https://raw.githubusercontent.com/azula1A89/audio8-tts-engine/gui/pictures/thumbnail.png)]([https://github.com/user-attachments/assets/b427da55-4c4d-472d-9580-2987bb403c2f])
 
+https://github.com/user-attachments/assets/03bfbde8-af27-4543-aef0-73d915606b94
 
 ## How it works
 
