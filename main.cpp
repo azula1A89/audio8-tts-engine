@@ -76,7 +76,11 @@ segment table:
   * after updating the segment length, you can manually adjust individual segments if needed.
   * you can also delete segments by selecting them and press the delete key.
   * to select multiple segments, hold the left-shift key while clicking on the segments you want to select.
-
+___
+about:
+  * [source] (https://github.com/azula1A89/audio8-tts-engine.git)
+  * [model 1] (https://huggingface.co/Edge0/Audio8-TTS-Preview-0.6B-ONNX-INT4/tree/main)
+  * [model 2] (https://modelscope.ai/models/Edge0/Audio8-TTS-Preview-0.6B-ONNX-INT4/files)
 )";
 
 class UserSettings {
@@ -478,8 +482,8 @@ int main(int argc, char** argv)
                              | ImGuiWindowFlags_NoMove 
                              | ImGuiWindowFlags_NoBackground;
 
-    Audio8ModelPaths paths{"models"};
-    std::filesystem::path session_root_path = "sessions";
+    Audio8ModelPaths paths{ settings.get().model_folder  };
+    std::filesystem::path session_root_path = settings.get().session_folder;
     std::string txt = "大家好，我是anthony。";
     std::vector<std::string> voices;
     std::string& default_voice = settings.get().default_voice;
@@ -531,7 +535,9 @@ int main(int argc, char** argv)
                 
                 ImGui::SameLine();
                 if (ImGui::Button("choose")) {
-                    paths = Audio8ModelPaths(choose_folder());
+                    settings.get().model_folder = choose_folder();
+                    settings.sync();
+                    paths = Audio8ModelPaths(settings.get().model_folder);
                     ImGui::CloseCurrentPopup();
                 }
 
