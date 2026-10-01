@@ -53,8 +53,8 @@ namespace miniaudio_impl {
     bool play() { return miniaudio.play(); }
     bool pause() { return miniaudio.pause(); }
     bool stop() { return miniaudio.stop(); }
-    void export_audio(int max_length_sec, const char* export_path ) { 
-        miniaudio.export_audio(max_length_sec, export_path); 
+    void export_audio(int max_length_sec, const char* export_path, uint32_t sample_rate) { 
+        miniaudio.export_audio(max_length_sec, export_path, sample_rate); 
     };
     bool play_file(const char* file) { return miniaudio.play_file(file); }
     void stop_file() { miniaudio.stop_file(); }

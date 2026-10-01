@@ -32,6 +32,7 @@ class MiniAudio {
     class LoopPlayer;
     class TrackPlayer;
     class Recoder;
+    class Resampler;
 public:
     MiniAudio();
     ~MiniAudio();
@@ -43,7 +44,7 @@ public:
     void track_delete(int index);
     void track_clear();
     size_t track_count();
-    void export_audio(int max_length_sec, const char* export_path = "sessions");
+    void export_audio(int max_length_sec, const char* export_path = "sessions", uint32_t sample_rate = 44100);
     size_t buffer_length();
     bool play();
     bool pause();

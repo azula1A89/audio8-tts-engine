@@ -51,7 +51,7 @@ namespace miniaudio_impl {
     bool play();
     bool pause();
     bool stop();
-    void export_audio(int max_length_sec, const char* export_path = "sessions");
+    void export_audio(int max_length_sec, const char* export_path = "sessions", uint32_t sample_rate = 44100U);
     bool play_file(const char* file = "output.WAV");
     void stop_file();
     bool is_playing_file();

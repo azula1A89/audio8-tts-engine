@@ -473,6 +473,95 @@ private:
     ma_encoder encoder_;
 };
 
+class MiniAudio::Resampler
+{
+public:
+    // 构造函数：建议加入 channels 通道数参数（默认为单声道 1）
+    explicit Resampler(ma_uint32 in_sample_rate, 
+                       ma_uint32 out_sample_rate, 
+                       ma_uint32 channels = 1)
+        : in_sample_rate_(in_sample_rate),
+          out_sample_rate_(out_sample_rate),
+          channels_(channels),
+          is_initialized_(false)
+    {
+        // 1. 初始化重采样配置对象
+        ma_resampler_config config = ma_resampler_config_init(
+            ma_format_f32,                // 采样格式（根据 float* 接口固定为 32位浮点型）
+            channels_,                    // 声道数
+            in_sample_rate_,              // 输入采样率 (Hz)
+            out_sample_rate_,             // 输出采样率 (Hz)
+            ma_resample_algorithm_linear  // 重采样算法（线性插值）
+        );
+
+        // 2. 初始化底层 ma_resampler 结构
+        ma_result result = ma_resampler_init(&config, nullptr, &resampler_);
+        if (result == MA_SUCCESS) {
+            is_initialized_ = true;
+        }
+    }
+
+    virtual ~Resampler() {
+        // 3. 析构时安全释放重采样器
+        if (is_initialized_) {
+            ma_resampler_uninit(&resampler_, nullptr);
+        }
+    }
+
+    /**
+     * @brief 执行 PCM 帧重采样
+     * @param in  输入 float PCM 缓存指针
+     * @param out 输出 float PCM 缓存指针
+     * @param in_frame_count  输入的 PCM 帧数
+     * @param max_out_frame_count 输出缓冲区能够容纳的最大 PCM 帧数
+     * @return ma_uint64 实际生成的输出 PCM 帧数
+     */
+    ma_uint64 resample(const float* in, float* out, ma_uint64 in_frame_count, ma_uint64 max_out_frame_count) {
+        if (!is_initialized_ || !in || !out) {
+            return 0;
+        }
+
+        ma_uint64 frame_count_in = in_frame_count;
+        ma_uint64 frame_count_out = max_out_frame_count;
+
+        // 4. 调用 miniaudio 原生帧重采样接口
+        ma_result result = ma_resampler_process_pcm_frames(
+            &resampler_, 
+            in, 
+            &frame_count_in, 
+            out, 
+            &frame_count_out
+        );
+
+        if (result != MA_SUCCESS) {
+            return 0;
+        }
+
+        // 返回实际写入 out 缓冲区的帧数
+        return frame_count_out;
+    }
+
+    // 辅助 API：根据输入的帧数预估所需的输出缓冲区大小（帧数）
+    ma_uint64 get_expected_output_frame_count(ma_uint64 input_frame_count) const {
+        if (!is_initialized_) return 0;
+        ma_uint64 expected_out = 0;
+        ma_resampler_get_expected_output_frame_count(
+            const_cast<ma_resampler*>(&resampler_), 
+            input_frame_count, 
+            &expected_out
+        );
+        return expected_out;
+    }
+
+private:
+    ma_uint32 in_sample_rate_;
+    ma_uint32 out_sample_rate_;
+    ma_uint32 channels_;
+    ma_resampler resampler_;
+    bool is_initialized_;
+};
+
+
 MiniAudio::MiniAudio() :
     tracks_{ std::make_unique<Tracks>(1, 44100) }, 
     loop_player_(nullptr), 
@@ -508,21 +597,26 @@ size_t MiniAudio::track_count() {
     return 0;
 }
 
-void MiniAudio::export_audio( int max_length_sec, const char* export_path ) {
+void MiniAudio::export_audio( int max_length_sec, const char* export_path, uint32_t sample_rate ) {
     ma_result result;
     ma_uint64 frames_read;
     ma_uint64 max_frames = max_length_sec * 44100U * 1;
     ma_uint64 len = tracks_->buffer_length();
+
+    Resampler resampler(44100, sample_rate);
 
     std::filesystem::path folder = export_path;
     if ( len && std::filesystem::exists(folder) && std::filesystem::is_directory(folder) ) {
         int parts = len / max_frames;
         int final_len = len % max_frames;
         std::vector<float> buffer;
+        std::vector<float> resampled_buffer;
         
         for (int n = 0; n < parts + 1; n++) {
             int length = ( n >= parts ) ? final_len : max_frames;
             buffer.resize(length);
+            int out_length = resampler.get_expected_output_frame_count(length);
+            resampled_buffer.resize(out_length);
 
             result = ma_data_source_seek_to_pcm_frame(tracks_->get_ma_data_source(), n * max_frames);
             if (result != MA_SUCCESS) { break; }
@@ -530,8 +624,14 @@ void MiniAudio::export_audio( int max_length_sec, const char* export_path ) {
             result = ma_data_source_read_pcm_frames(tracks_->get_ma_data_source(), buffer.data(), length, &frames_read);
             if (result != MA_SUCCESS) { break; }
 
+            resampler.resample(buffer.data(), resampled_buffer.data(), length, out_length);
+
             auto wav_file = folder / fmt::format("part_{}_{}.wav", n+1, parts+1);
-            wav_write( buffer.data(), buffer.size(), wav_file.string().c_str());
+            auto recoder = make_unique_nothrow<Recoder>( wav_file.string().c_str(), sample_rate);
+            if ( recoder ) {
+                recoder->write(resampled_buffer.data(), resampled_buffer.size());
+            }
+            recoder.reset();
         }
     }
 
@@ -597,7 +697,6 @@ void MiniAudio::wav_write(const float *buff, uint64_t count, const char* name) {
     if ( recoder_ ) {
         recoder_->write(buff, count);
         recoder_.reset();
-        recoder_ = nullptr;
     }
 }
 
