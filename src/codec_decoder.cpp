@@ -40,24 +40,33 @@ public:
     t_per_frame_ms_(0.5), 
     run_opts_(), 
     on_pcm_update_(nullptr), 
-    is_inferencing_(false) {}
+    is_inferencing_(false),
+    config_(config) {}
     
     bool initialize() {
         Ort::SessionOptions options;
-        try
-        {
-            OrtCUDAProviderOptions cuda_options{};
-            cuda_options.device_id = 0;
+        if (config_.execution_provider == ExecutionProvider::GPU) {
+            try
+            {
+                OrtCUDAProviderOptions cuda_options{};
+                cuda_options.device_id = 0;
 
-            options.AppendExecutionProvider_CUDA(cuda_options);
+                options.AppendExecutionProvider_CUDA(cuda_options);
 
-            session_ = make_unique_nothrow<Ort::Session>(env_, path_.c_str(), options);
-        }
-        catch (const Ort::Exception&)
-        {
+                session_ = make_unique_nothrow<Ort::Session>(env_, path_.c_str(), options);
+            }
+            catch (const Ort::Exception&)
+            {
+                options.SetGraphOptimizationLevel(
+                    GraphOptimizationLevel::ORT_ENABLE_ALL);
+                options.SetIntraOpNumThreads(config_.codec_decoder_thread_num);
+
+                session_ = make_unique_nothrow<Ort::Session>(env_, path_.c_str(), options);
+            }
+        } else if (config_.execution_provider == ExecutionProvider::CPU) {
             options.SetGraphOptimizationLevel(
                 GraphOptimizationLevel::ORT_ENABLE_ALL);
-            options.SetIntraOpNumThreads(4);
+            options.SetIntraOpNumThreads(config_.codec_decoder_thread_num);
 
             session_ = make_unique_nothrow<Ort::Session>(env_, path_.c_str(), options);
         }
@@ -198,7 +207,8 @@ private:
     double t_per_frame_ms_;
     Ort::RunOptions run_opts_;
     decoder_callback on_pcm_update_;
-    std::atomic<bool> is_inferencing_; 
+    std::atomic<bool> is_inferencing_;
+    RuntimeConfig config_;
 };
 
 

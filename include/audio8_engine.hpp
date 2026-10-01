@@ -80,7 +80,14 @@ constexpr int FRAME_SAMPLES = 2048;
 
 using code_frame = std::array<int64_t, audio8::NUM_CODEBOOKS>;
 using code_frame_item = std::pair<int, std::vector<code_frame>>;
-struct RuntimeConfig { };
+enum class ExecutionProvider { CPU, GPU };
+struct RuntimeConfig {
+    uint32_t slow_ar_thread_num = 4;
+    uint32_t fast_ar_thread_num = 1;
+    uint32_t codec_decoder_thread_num = 4;
+    uint32_t codec_encoder_thread_num = 4;
+    ExecutionProvider execution_provider = ExecutionProvider::CPU;
+};
 struct SamplingConfig { };
 
 template<class T>
@@ -209,7 +216,7 @@ class Audio8Engine
     std::unique_ptr<Impl> pImpl;
 
 public:
-    Audio8Engine();
+    Audio8Engine( const RuntimeConfig& cfg = RuntimeConfig() );
     ~Audio8Engine();
     Audio8Engine(Audio8Engine&&);
     Audio8Engine& operator=(Audio8Engine&&);

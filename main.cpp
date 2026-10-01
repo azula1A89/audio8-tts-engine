@@ -94,6 +94,7 @@ private:
         bool enable_automatic_segmentation_trigger = false;
         int window_width = 1500;
         int window_height = 610;
+        RuntimeConfig runtime_config;
     } settings_;
 
 public:
@@ -129,6 +130,11 @@ public:
             else if (key == "enable_automatic_segmentation_trigger") setting->enable_automatic_segmentation_trigger = std::stoi(value) != 0;
             else if (key == "window_width") setting->window_width = std::stoi(value);
             else if (key == "window_height") setting->window_height = std::stoi(value);
+            else if (key == "slow_ar_thread_num") setting->runtime_config.slow_ar_thread_num = std::stoi(value);
+            else if (key == "fast_ar_thread_num") setting->runtime_config.fast_ar_thread_num = std::stoi(value);
+            else if (key == "codec_encoder_thread_num") setting->runtime_config.codec_encoder_thread_num = std::stoi(value);
+            else if (key == "codec_decoder_thread_num") setting->runtime_config.codec_decoder_thread_num = std::stoi(value);
+            else if (key == "execution_provider") setting->runtime_config.execution_provider = static_cast<ExecutionProvider>(std::stoi(value));
         } catch (const std::exception&) {
             fmt::print("Failed to parse setting: {}\n", key);
         }
@@ -152,6 +158,11 @@ public:
         buf->appendf("enable_automatic_segmentation_trigger=%d\n", setting->enable_automatic_segmentation_trigger);
         buf->appendf("window_width=%d\n", setting->window_width);
         buf->appendf("window_height=%d\n", setting->window_height);
+        buf->appendf("slow_ar_thread_num=%d\n", setting->runtime_config.slow_ar_thread_num);
+        buf->appendf("fast_ar_thread_num=%d\n", setting->runtime_config.fast_ar_thread_num);
+        buf->appendf("codec_encoder_thread_num=%d\n", setting->runtime_config.codec_encoder_thread_num);
+        buf->appendf("codec_decoder_thread_num=%d\n", setting->runtime_config.codec_decoder_thread_num);
+        buf->appendf("execution_provider=%d\n", setting->runtime_config.execution_provider);
         buf->append("\n"); 
     }
 
@@ -476,7 +487,7 @@ int main(int argc, char** argv)
     std::string transcript;
     std::string ref_audio_path;
 
-    std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>();
+    std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>(settings.get().runtime_config);
     std::unique_ptr<Session> session = nullptr;
     std::future<void> engine_status = {};
     std::future<void> registration_status = {};
@@ -762,6 +773,63 @@ int main(int argc, char** argv)
                                 ImGui::EndCombo();
                             }
 
+                            ImGui::EndMenu();
+                        }
+
+                        if ( ImGui::BeginMenu("onnxruntime") ) {
+                            uint32_t step = 1;
+                            const ImGuiDataType_ type = ImGuiDataType_U32;
+                            static bool value_changed = false;
+                            static uint32_t n = std::thread::hardware_concurrency();
+                            uint32_t& slowar_t_num = settings.get().runtime_config.slow_ar_thread_num;
+                            uint32_t& fastar_t_num = settings.get().runtime_config.fast_ar_thread_num;
+                            uint32_t& encoder_t_num = settings.get().runtime_config.codec_encoder_thread_num;
+                            uint32_t& decoder_t_num = settings.get().runtime_config.codec_decoder_thread_num;
+                            ExecutionProvider& ep = settings.get().runtime_config.execution_provider;
+
+                            if (ImGui::RadioButton( "CPU", ep == ExecutionProvider::CPU)) {
+                                ep = ExecutionProvider::CPU;
+                                value_changed = true;
+                                settings.sync();
+                            }
+                            ImGui::SameLine();
+                            if (ImGui::RadioButton( "GPU", ep == ExecutionProvider::GPU)) {
+                                ep = ExecutionProvider::GPU;
+                                value_changed = true;
+                                settings.sync();
+                            }
+
+                            if ( ImGui::InputScalar("slow ar thread", type, &slowar_t_num, &step) ) {
+                                slowar_t_num = std::clamp(slowar_t_num, 1u, n);
+                                value_changed = true;
+                                settings.sync();
+                            }
+                            if ( ImGui::InputScalar("fast ar thread", type, &fastar_t_num, &step) ) {
+                                fastar_t_num = std::clamp(fastar_t_num, 1u, n);
+                                value_changed = true;
+                                settings.sync();
+                            }
+
+                            if ( ImGui::InputScalar("encoder thread", type, &encoder_t_num, &step) ) {
+                                encoder_t_num = std::clamp(encoder_t_num, 1u, n);
+                                value_changed = true;
+                                settings.sync();
+                            }
+
+                            if ( ImGui::InputScalar("decoder thread", type, &decoder_t_num, &step) ) {
+                                decoder_t_num = std::clamp(decoder_t_num, 1u, n);
+                                value_changed = true;
+                                settings.sync();
+                            }
+                            if (value_changed) {
+                                imgui_scoped::StyleVar var(ImGuiStyleVar_FrameRounding, 8);
+                                if ( ImGui::Button("apply", ImVec2(-1.0f, 0.0f)) ) {
+                                    value_changed = false;
+                                    engine->cancel();
+                                    engine = std::make_unique<Audio8Engine>(settings.get().runtime_config);
+                                    is_initialized = false;
+                                }
+                            }
                             ImGui::EndMenu();
                         }
                         

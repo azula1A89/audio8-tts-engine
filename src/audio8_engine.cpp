@@ -69,6 +69,7 @@ class Audio8Engine::Impl
 private:
     Audio8ModelPaths paths_;
     std::unique_ptr<Ort::Env> env_;
+    RuntimeConfig cfg_;
     std::unique_ptr<VoiceManager> voice_manager_;
     std::unique_ptr<PromptBuilder> prompt_builder_;
     std::unique_ptr<SlowARGenerator> slow_ar_;
@@ -92,9 +93,10 @@ private:
     std::mutex code_frame_mutex_;
     
 public:
-    Impl() :
+    Impl( const RuntimeConfig& cfg ) :
         paths_(),
         env_(nullptr),
+        cfg_(cfg),
         voice_manager_(nullptr),
         prompt_builder_(nullptr),
         slow_ar_(nullptr),
@@ -119,7 +121,6 @@ public:
     };
 
     bool initialize(const std::filesystem::path& model_dir) {
-        RuntimeConfig cfg;
         if( !model_dir.empty() ) {
             paths_ = Audio8ModelPaths(model_dir);
         }
@@ -135,7 +136,7 @@ public:
         voice_manager_ = make_unique_nothrow<VoiceManager>(
             env_.get(),
             paths_,
-            cfg
+            cfg_
         );
         initialized_ &= (voice_manager_ != nullptr);
 
@@ -149,21 +150,21 @@ public:
         slow_ar_ = make_unique_nothrow<SlowARGenerator>(
             env_.get(),
             paths_,
-            cfg
+            cfg_
         );
         initialized_ &= (slow_ar_ != nullptr);
         
         fast_ar_ = make_unique_nothrow<FastARGenerator>(
             env_.get(),
             paths_,
-            cfg
+            cfg_
         );
         initialized_ &= (fast_ar_ != nullptr);
 
         codec_decoder_ = make_unique_nothrow<CodecDecoder>(
             env_.get(),
             paths_,
-            cfg
+            cfg_
         );
         initialized_ &= (codec_decoder_ != nullptr);
 
@@ -609,7 +610,7 @@ private:
 
 };
 
-Audio8Engine::Audio8Engine() : pImpl{ std::make_unique<Impl>() } {}
+Audio8Engine::Audio8Engine( const RuntimeConfig& cfg ) : pImpl{ std::make_unique<Impl>(cfg) } {}
 Audio8Engine::~Audio8Engine() = default;
 
 std::vector<std::string> Audio8Engine::list_voices() { return pImpl->list_voices(); }
