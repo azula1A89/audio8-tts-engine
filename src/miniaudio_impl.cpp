@@ -606,7 +606,7 @@ void MiniAudio::export_audio( int max_length_sec, const char* export_path, uint3
     Resampler resampler(44100, sample_rate);
 
     std::filesystem::path folder = export_path;
-    if ( len && std::filesystem::exists(folder) && std::filesystem::is_directory(folder) ) {
+    if ( len && std::filesystem::is_directory(folder) ) {
         int parts = len / max_frames;
         int final_len = len % max_frames;
         std::vector<float> buffer;
@@ -666,8 +666,7 @@ bool MiniAudio::stop() {
 }
 
 bool MiniAudio::play_file(const char* file) {
-    bool ret = std::filesystem::exists(file);
-         ret &= std::filesystem::is_regular_file(file);
+    bool ret = std::filesystem::is_regular_file(file);
     if ( ret && !loop_player_ ) {
         loop_player_ = make_unique_nothrow<LoopPlayer>(file, ma_standard_sample_rate_44100, 2.5f);
         ret = (loop_player_ && loop_player_->initialized());

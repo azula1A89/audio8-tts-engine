@@ -94,11 +94,11 @@ public:
         std::filesystem::path json_path = voice_folder / (voice_name + ".json");
         std::filesystem::path codes_path = voice_folder / (voice_name + ".bin");
 
-        if ( !std::filesystem::exists( root ) ) {
+        if ( !std::filesystem::is_directory( root ) ) {
             std::filesystem::create_directories( root );
         }
 
-        if ( !std::filesystem::exists( voice_folder ) ) {
+        if ( !std::filesystem::is_directory( voice_folder ) ) {
             std::filesystem::create_directories( voice_folder );
         }
 
@@ -130,7 +130,7 @@ public:
     std::vector<std::string> list_voices() {
         std::vector<std::string> voices;
         std::filesystem::path root = "voices";
-        if (std::filesystem::exists(root) && std::filesystem::is_directory(root)) {
+        if (std::filesystem::is_directory(root)) {
             for (const auto& entry : std::filesystem::directory_iterator(root)) {
                 if (entry.is_directory()) {
                     voices.push_back(entry.path().filename().string());
@@ -145,8 +145,8 @@ public:
         std::filesystem::path root = "voices";
         std::filesystem::path json_path = root / voice_name / (voice_name + ".json");
         std::filesystem::path code_path = root / voice_name / (voice_name + ".bin");
-        if ( std::filesystem::exists(json_path) ) {
-            if ( std::filesystem::exists(code_path) ) {
+        if ( std::filesystem::is_regular_file(json_path) ) {
+            if ( std::filesystem::is_regular_file(code_path) ) {
                 std::vector<int64_t> codes;
                 if ( load_codes(code_path, codes) ) {
 

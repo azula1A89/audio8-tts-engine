@@ -182,12 +182,12 @@ struct Audio8ModelPaths
     }
 
     bool check() {
-        bool result = std::filesystem::exists(manifest);
-            result &= std::filesystem::exists(tokenizer);
-            result &= std::filesystem::exists(slow_ar);
-            result &= std::filesystem::exists(fast_ar);
-            result &= std::filesystem::exists(codec_decoder);
-            result &= std::filesystem::exists(codec_encoder);
+        bool result = std::filesystem::is_regular_file(manifest);
+            result &= std::filesystem::is_regular_file(tokenizer);
+            result &= std::filesystem::is_regular_file(slow_ar);
+            result &= std::filesystem::is_regular_file(fast_ar);
+            result &= std::filesystem::is_regular_file(codec_decoder);
+            result &= std::filesystem::is_regular_file(codec_encoder);
         return result;
     }
 };
