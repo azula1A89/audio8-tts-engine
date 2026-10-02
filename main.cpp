@@ -234,6 +234,7 @@ private:
     size_t track_count_;
     size_t request_count_;
     std::vector<config_item_s> configs_;
+    std::string origin_text_ = "大家好，我是anthony。";
     std::queue<int> done_;
     std::mutex done_mutex_;
     
@@ -264,6 +265,7 @@ public:
         ifs.close();
 
         auto session = std::make_unique<Session>(j["root"], j["cache"], j["track_count"]);
+        session->origin_text_ = j["origin_text"];
         for (const auto& cfg : j["configs"]) {
             Session::config_item_s config;
             config.id = cfg["id"];
@@ -287,6 +289,10 @@ public:
     
     std::vector<config_item_s>& configs() {
         return configs_;
+    }
+
+    std::string& text() {
+        return origin_text_;
     }
 
     void init_playlist() {
@@ -424,6 +430,7 @@ public:
         save["root"] = root_;
         save["cache"] = cache_;
         save["track_count"] = track_count();
+        save["origin_text"] = origin_text_;
         save["configs"] = json::array();
         for (size_t i = 0; i < configs_.size(); ++i) {
             const auto& config = configs_[i];
@@ -512,7 +519,6 @@ int main(int argc, char** argv)
 
     Audio8ModelPaths paths{ settings.get().model_folder  };
     std::filesystem::path session_root_path = settings.get().session_folder;
-    std::string txt = "大家好，我是anthony。";
     std::vector<std::string> voices;
     std::string& default_voice = settings.get().default_voice;
     std::string new_voice_name;
@@ -954,6 +960,7 @@ int main(int argc, char** argv)
 
             // Text input + chunk info table
             if( is_initialized  && session) {
+                std::string& origin_text = session->text();
                 int& segment_max_token = settings.get().segment_max_token;
                 static bool enable_edit_trigger = false;
                 static int last_segment_max_token = -1;
@@ -964,7 +971,7 @@ int main(int argc, char** argv)
 
                 imgui_scoped::Disabled disable(disable_edit);
                 auto sz = ImGui::GetContentRegionAvail();
-                edit_count += ImGui::InputTextMultiline("##text to speach", &txt,
+                edit_count += ImGui::InputTextMultiline("##text to speach", &origin_text,
                     ImVec2(-FLT_MIN, sz.y * 0.25f), 
                     0);
 
@@ -981,8 +988,8 @@ int main(int argc, char** argv)
                     last_edit_count = edit_count;
                     last_segment_max_token = segment_max_token;
 
-                    split_text_status = std::async(std::launch::async, [&txt, &engine, &default_voice, &segment_max_token](){
-                        return engine->split_text_by_tokens(txt, segment_max_token);
+                    split_text_status = std::async(std::launch::async, [&origin_text, &engine, &default_voice, &segment_max_token](){
+                        return engine->split_text_by_tokens(origin_text, segment_max_token);
                     });
                 }
                 
