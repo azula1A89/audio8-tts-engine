@@ -110,7 +110,8 @@ private:
         std::string session_folder = "sessions";
         std::string export_folder = "sessions";
         std::string default_voice = "anthony";
-        float font_scale = 1.0f;
+        std::string font = "fonts/NotoSansSC-Regular.ttf";
+        float font_scale_main = 1.0f;
         int theme = 0;
         int export_length = 1200;
         int export_sample_rate = 44100;
@@ -146,7 +147,8 @@ public:
             else if (key == "session_folder") setting->session_folder = value;
             else if (key == "export_folder") setting->export_folder = value;
             else if (key == "default_voice") setting->default_voice = value;
-            else if (key == "font_scale") setting->font_scale = std::stof(value);
+            else if (key == "font") setting->font = value;
+            else if (key == "font_scale_main") setting->font_scale_main = std::stof(value);
             else if (key == "theme") setting->theme = std::stoi(value);
             else if (key == "export_length") setting->export_length = std::stoi(value);
             else if (key == "export_sample_rate") setting->export_sample_rate = std::stoi(value);
@@ -174,7 +176,8 @@ public:
         buf->appendf("session_folder=%s\n", setting->session_folder.c_str());
         buf->appendf("export_folder=%s\n", setting->export_folder.c_str());
         buf->appendf("default_voice=%s\n", setting->default_voice.c_str());
-        buf->appendf("font_scale=%.2f\n", setting->font_scale);
+        buf->appendf("font=%s\n", setting->font.c_str());
+        buf->appendf("font_scale_main=%.2f\n", setting->font_scale_main);
         buf->appendf("theme=%d\n", setting->theme);
         buf->appendf("export_length=%d\n", setting->export_length);
         buf->appendf("export_sample_rate=%d\n", setting->export_sample_rate);
@@ -240,7 +243,7 @@ public:
         size_t track_count = 0) :
         root_(root), cache_(cache), track_count_(track_count), request_count_(0) {
         auto cache_path = root_ / cache_;
-        if ( !std::filesystem::exists(cache_path) ) {
+        if ( !std::filesystem::is_directory(cache_path) ) {
             std::filesystem::create_directories(cache_path);
         }
         init_playlist();
@@ -288,7 +291,7 @@ public:
 
     void init_playlist() {
         auto cache_path = root_ / cache_;
-        if (!std::filesystem::exists(cache_path) || !std::filesystem::is_directory(cache_path)) {
+        if (!std::filesystem::is_directory(cache_path)) {
             return;
         }
 
@@ -352,7 +355,7 @@ public:
     
     size_t track_count() {
         auto cache_path = root_ / cache_;
-        if (!std::filesystem::exists(cache_path) || !std::filesystem::is_directory(cache_path)) {
+        if (!std::filesystem::is_directory(cache_path)) {
             return 0;
         }
 
@@ -448,6 +451,7 @@ public:
 
 std::string choose_folder();
 std::string choose_audio_path();
+std::string choose_font_path();
 void imgui_parent_window();
 std::function<void(GLFWwindow*)> render_frame;
 UserSettings settings;
@@ -483,19 +487,24 @@ int main(int argc, char** argv)
     
     ImGuiTheme::ApplyTweakedTheme(static_cast<ImGuiTheme::ImGuiTheme_>(settings.get().theme));
 
-    auto cjk = io.Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf");
+    std::string font_path = settings.get().font;
+    if ( std::filesystem::is_regular_file( font_path ) ) {
+        ImGui::GetIO().FontDefault = io.Fonts->AddFontFromFileTTF(font_path.c_str());
+    }
 
     float xscale, yscale;
     glfwGetWindowContentScale((GLFWwindow *) main_window, &xscale, &yscale);
 
     ImGuiStyle& style = ImGui::GetStyle();
     style.FontScaleDpi = std::max(xscale, yscale);
+    style.FontScaleMain = settings.get().font_scale_main;
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(main_window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    ImGui::MarkdownConfig md_config{ NULL, NULL, NULL, NULL, { { cjk, true }, { cjk, true }, { cjk, false } }, NULL };
+    ImGui::MarkdownConfig md_config{ NULL, NULL, NULL, NULL, 
+        { { io.FontDefault, true }, { io.FontDefault, true }, { io.FontDefault, false } }, NULL };
 
     const int popup_spinner_flag = ImGuiWindowFlags_NoDecoration 
                              | ImGuiWindowFlags_NoMove 
@@ -630,7 +639,7 @@ int main(int argc, char** argv)
 
                             if ( ImGui::BeginMenu("recent") ) {
                                 static std::string session_recent = "";
-                                if (std::filesystem::exists(session_root_path) && std::filesystem::is_directory(session_root_path)) {
+                                if (std::filesystem::is_directory(session_root_path)) {
                                     std::vector<std::string> recent_sessions;
                                     for (const auto& entry : std::filesystem::directory_iterator(session_root_path)) {
                                         if (entry.is_regular_file() && entry.path().extension() == ".json") {
@@ -663,7 +672,7 @@ int main(int argc, char** argv)
 
                                     std::string folder = settings.get().export_folder;
                                     if (ImGui::InputTextWithHint("##export to folder", "export to folder", &folder)) {
-                                        if (!folder.empty() && std::filesystem::exists(folder) && std::filesystem::is_directory(folder)) {
+                                        if (!folder.empty() && std::filesystem::is_directory(folder)) {
                                             settings.get().export_folder = folder;
                                             settings.sync();
                                         }
@@ -671,7 +680,7 @@ int main(int argc, char** argv)
                                     ImGui::SameLine();
                                     if (ImGui::Button("choose folder")) {
                                         folder = choose_folder();
-                                        if (!folder.empty() && std::filesystem::exists(folder) && std::filesystem::is_directory(folder)) {
+                                        if (!folder.empty() && std::filesystem::is_directory(folder)) {
                                             settings.get().export_folder = folder;
                                             settings.sync();
                                         }
@@ -772,15 +781,7 @@ int main(int argc, char** argv)
                     if (ImGui::BeginMenu("settings")) {
 
                         if(ImGui::BeginMenu("user interface")) {
-                            float& font_scale = settings.get().font_scale;
-                            if (ImGui::DragFloat("font scale", &font_scale, 0.01f, 0.2f, 3.0f)) {
-                                ImGui::GetStyle().FontScaleMain = font_scale;
-                                settings.sync();
-                            }
 
-                            // ImGuiIO& io = ImGui::GetIO();
-                            // ImFontAtlas* atlas = io.Fonts;
-                            // ImGui::ShowFontAtlas(atlas);
                             int& theme = settings.get().theme;
                             if( ImGui::BeginCombo("theme", ImGuiTheme::ImGuiTheme_Name(static_cast<ImGuiTheme::ImGuiTheme_>(theme))) ) {
                                 for (int i = 0; i< ImGuiTheme::ImGuiTheme_Count; i++) {
@@ -799,6 +800,25 @@ int main(int argc, char** argv)
                                     }
                                 }
                                 ImGui::EndCombo();
+                            }
+
+                            float& font_scale = settings.get().font_scale_main;
+                            if (ImGui::DragFloat("font scale", &font_scale, 0.01f, 0.2f, 3.0f)) {
+                                ImGui::GetStyle().FontScaleMain = font_scale;
+                                settings.sync();
+                            }
+
+                            imgui_scoped::StyleVar var(ImGuiStyleVar_FrameRounding, 8);
+                            static std::filesystem::path font = settings.get().font;
+                            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                            if ( ImGui::Button(font.filename().string().c_str()) ) {
+                                font = choose_font_path();
+                                if ( std::filesystem::is_regular_file(font) && 
+                                    font.extension().string() == ".ttf") {
+                                    settings.get().font = font.string();
+                                    settings.sync();
+                                    ImGui::GetIO().FontDefault = io.Fonts->AddFontFromFileTTF(font.string().c_str(), 16.0f);
+                                }
                             }
 
                             ImGui::EndMenu();
@@ -1309,6 +1329,21 @@ std::string choose_audio_path()
     NFD::UniquePath out_path;
     nfdfilteritem_t filter_item[3] = {
         {"*", "wav,mp3,flac"}};
+    std::string default_path = std::filesystem::current_path().string();
+    nfdresult_t result = NFD::OpenDialog(out_path, filter_item, 1, default_path.c_str());
+    if (result == NFD_OKAY){
+        path = out_path.get();
+    }
+    return path;
+}
+
+std::string choose_font_path()
+{
+    std::string path="";
+    NFD::Guard nfd_guard;
+    NFD::UniquePath out_path;
+    nfdfilteritem_t filter_item[1] = {
+        {"TrueType Font", "ttf"}};
     std::string default_path = std::filesystem::current_path().string();
     nfdresult_t result = NFD::OpenDialog(out_path, filter_item, 1, default_path.c_str());
     if (result == NFD_OKAY){
