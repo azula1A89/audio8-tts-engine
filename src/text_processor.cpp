@@ -23,26 +23,89 @@ SOFTWARE.
 */
 
 #include <regex>
+#include <string>
+#include <string_view>
+#include <cctype> 
+
+#include <uni_algo/norm.h>
+#include <uni_algo/prop.h>
+#include <uni_algo/ranges.h>
+#include <uni_algo/ranges_conv.h>
+#include <uni_algo/conv.h>
+
 #include <text_processor.hpp>
 
 class TextProcessor::Impl {
 public:
     Impl() = default;
     ~Impl() = default;
-    std::string clean_text(const std::string& text) {
-        std::u32string u32text = utf8_to_utf32(text);
-        std::u32string filtered;
-        
-        for (char32_t c : u32text) {
-            if (is_whitespace(c)) {
-                filtered += c;
-            } else if (!is_category_C(c)) {
-                filtered += c;
+    std::string clean_text(std::string_view input)
+    {
+        // 1. NFKC normalization (full-width to half-width, handling combining characters, etc.)
+        std::string normalized = una::norm::to_nfkc_utf8(input);
+
+        std::string result;
+        result.reserve(normalized.size());
+
+        bool last_was_space = false;
+        char32_t last_punct = 0;
+
+        // 2. Filter, deduplicate, and convert types in a single pass
+        for (char32_t c : normalized | una::views::utf8)
+        {
+            // Determine whether to keep the current character
+            bool keep = false;
+            if (una::codepoint::is_alphabetic(c) ||
+                una::codepoint::is_numeric(c)    ||
+                una::codepoint::is_whitespace(c) ||
+                is_useful_punctuation(c))
+            {
+                keep = true;
             }
+            else
+            {
+                keep = !should_remove(c);
+            }
+
+            if (!keep) continue;
+
+            // Handle whitespace characters
+            if (una::codepoint::is_whitespace(c))
+            {
+                if (!last_was_space && !result.empty())
+                {
+                    result.push_back(' '); // unify to half-width space
+                    last_was_space = true;
+                }
+                last_punct = 0;
+                continue;
+            }
+
+            last_was_space = false;
+
+            // Handle punctuation characters
+            if (is_useful_punctuation(c))
+            {
+                if (c == last_punct)
+                    continue; // 连续相同标点跳过
+                last_punct = c;
+            }
+            else
+            {
+                last_punct = 0;
+            }
+
+            // Append the current character to the result string
+            append_utf8(result, c);
         }
-        
-        std::u32string normalized = _normalize_whitespace(filtered);
-        return utf32_to_utf8(normalized);
+
+        // Remove trailing space if present
+        if (!result.empty() && result.back() == ' ')
+        {
+            result.pop_back();
+        }
+
+        return result;
     }
 
     std::string format_reference_text(const std::string& text) {
@@ -95,8 +158,12 @@ public:
                         break;
                     }
                 }
+
+                auto txt = clean_text(text.substr(start, i - start));
+                if ( !txt.empty() ) {
+                    sentences.push_back(txt);
+                }
                 
-                sentences.push_back(text.substr(start, i - start));
                 start = i;
             } else {
                 i++;
@@ -104,67 +171,87 @@ public:
         }
 
         if (start < text.length()) {
-            sentences.push_back(text.substr(start));
+            auto txt = clean_text(text.substr(start));
+            if ( !txt.empty() ) {
+                sentences.push_back(txt);
+            }
         }
 
         return sentences;
     }
 
     // if a string contains any CJK characters, it is considered as CJK text
-    bool contains_cjk(const std::string& text) {
-        std::u32string u32text = utf8_to_utf32(text);
-        for (char32_t c : u32text) {
+    bool contains_cjk( std::string_view input ) {
+        for (char32_t c : input | una::views::utf8) {
             if (is_cjk(c)) {
                 return true;
             }
         }
         return false;
     }
-private:
 
-    std::u32string utf8_to_utf32(const std::string& utf8) {
-        std::u32string utf32;
-        size_t i = 0;
-        while (i < utf8.length()) {
-            unsigned char c = utf8[i];
-            if (c <= 0x7F) {
-                utf32 += c; i += 1;
-            } else if ((c & 0xE0) == 0xC0) {
-                if (i + 1 < utf8.length()) utf32 += ((c & 0x1F) << 6) | (utf8[i+1] & 0x3F);
-                i += 2;
-            } else if ((c & 0xF0) == 0xE0) {
-                if (i + 2 < utf8.length()) utf32 += ((c & 0x0F) << 12) | ((utf8[i+1] & 0x3F) << 6) | (utf8[i+2] & 0x3F);
-                i += 3;
-            } else if ((c & 0xF8) == 0xF0) {
-                if (i + 3 < utf8.length()) utf32 += ((c & 0x07) << 18) | ((utf8[i+1] & 0x3F) << 12) | ((utf8[i+2] & 0x3F) << 6) | (utf8[i+3] & 0x3F);
-                i += 4;
-            } else {
-                i += 1;
+private:
+    bool should_remove(char32_t c) {
+        using namespace una::codepoint;
+
+        if (is_control(c) || is_private_use(c) || is_noncharacter(c)) return true;
+
+        if (c == 0x200B || c == 0x200C || c == 0x200D || c == 0xFEFF || c == 0x2060) return true;
+
+        auto p = prop{c};
+        if (p.General_Category_So()) {
+            switch (c) {
+                case U'%': case U'$': case U'€': case U'£': case U'¥':
+                case U'+': case U'=': case U'×': case U'÷':
+                    return false;
+                default:
+                    return true;
             }
         }
-        return utf32;
+
+        // Emoji blocks as a fallback
+        if ((c >= 0x1F300 && c <= 0x1F9FF) || (c >= 0x1FA00 && c <= 0x1FAFF) ||
+            (c >= 0x2600  && c <= 0x26FF)  || (c >= 0x2700  && c <= 0x27BF)  ||
+            (c >= 0xFE00  && c <= 0xFE0F)  || (c >= 0x1F000 && c <= 0x1F02F))
+            return true;
+
+        return false;
     }
 
-    std::string utf32_to_utf8(const std::u32string& utf32) {
-        std::string utf8;
-        for (char32_t c : utf32) {
-            if (c <= 0x7F) {
-                utf8 += static_cast<char>(c);
-            } else if (c <= 0x7FF) {
-                utf8 += static_cast<char>(0xC0 | (c >> 6));
-                utf8 += static_cast<char>(0x80 | (c & 0x3F));
-            } else if (c <= 0xFFFF) {
-                utf8 += static_cast<char>(0xE0 | (c >> 12));
-                utf8 += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
-                utf8 += static_cast<char>(0x80 | (c & 0x3F));
-            } else if (c <= 0x10FFFF) {
-                utf8 += static_cast<char>(0xF0 | (c >> 18));
-                utf8 += static_cast<char>(0x80 | ((c >> 12) & 0x3F));
-                utf8 += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
-                utf8 += static_cast<char>(0x80 | (c & 0x3F));
-            }
+    bool is_useful_punctuation(char32_t c) {
+        switch (c) {
+            // english
+            case U'.': case U',': case U'!': case U'?':
+            case U';': case U':': case U'\'': case U'"':
+            case U'-': case U'(': case U')': case U'[': case U']':
+            // cjk
+            case U'。': case U'，': case U'！': case U'？':
+            case U'；': case U'：': case U'、': case U'…':
+            case U'—': case U'（': case U'）': case U'【': case U'】':
+            case U'《': case U'》': case U'“': case U'”': case U'‘': case U'’':
+            case U'『': case U'』': case U'「': case U'」':
+                return true;
+            default:
+                return false;
         }
-        return utf8;
+    }
+
+    inline void append_utf8(std::string& out, char32_t cp) {
+        if (cp <= 0x7F) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp <= 0x7FF) {
+            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else if (cp <= 0xFFFF) {
+            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        }
     }
 
     bool is_cjk(char32_t c) {
@@ -176,73 +263,7 @@ private:
             (c >= 0xF900 && c <= 0xFAFF) || (c >= 0xFE30 && c <= 0xFE4F) ||
             (c >= 0xFF01 && c <= 0xFF9F) || (c >= 0x20000 && c <= 0x2FA1F);
     }
-
-    bool is_line_break(char32_t c) {
-        return c == U'\r' || c == U'\n' || c == U'\v' || c == U'\f' || 
-            (c >= 0x1C && c <= 0x1E) || c == 0x85 || 
-            c == 0x2028 || c == 0x2029;
-    }
-
-    bool is_whitespace(char32_t c) {
-        return c == U' ' || c == U'\t' || c == U'\n' || c == U'\r' || 
-            c == U'\v' || c == U'\f' || c == 0x1C || c == 0x1D || 
-            c == 0x1E || c == 0x85 || c == 0xA0 || c == 0x1680 || 
-            (c >= 0x2000 && c <= 0x200A) || c == 0x2028 || 
-            c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000;
-    }
-
-    bool is_category_C(char32_t c) {
-        if (c <= 0x1F || (c >= 0x7F && c <= 0x9F)) return true; // Cc (Control)
-        if (c >= 0xD800 && c <= 0xDFFF) return true;            // Cs (Surrogate)
-        if ((c >= 0xE000 && c <= 0xF8FF) || 
-            (c >= 0xF0000 && c <= 0xFFFFD) || 
-            (c >= 0x100000 && c <= 0x10FFFD)) return true;      // Co (Private Use)
-        if (c == 0xAD || c == 0x200B || c == 0x200C || c == 0x200D || 
-            c == 0x200E || c == 0x200F || c == 0xFEFF) return true; // Cf (Format subset)
-        return false;
-    }
-
-    std::u32string _normalize_whitespace(const std::u32string& text) {
-        std::u32string result;
-        size_t n = text.length();
-        size_t i = 0;
-        
-        // re.sub(r"\s+", replace, text)
-        while (i < n) {
-            if (is_whitespace(text[i])) {
-                size_t start = i;
-                bool has_line_break = false;
-                while (i < n && is_whitespace(text[i])) {
-                    if (is_line_break(text[i])) has_line_break = true;
-                    i++;
-                }
-                
-                char32_t left = (start > 0) ? text[start - 1] : 0;
-                char32_t right = (i < n) ? text[i] : 0;
-                
-                if (has_line_break && left != 0 && right != 0 && is_cjk(left) && is_cjk(right)) {
-
-                } else {
-                    result += U' ';
-                }
-            } else {
-                result += text[i];
-                i++;
-            }
-        }
-        
-        // .strip()
-        size_t first = 0;
-        while (first < result.length() && result[first] == U' ') first++;
-        if (first == result.length()) return U"";
-        
-        size_t last = result.length() - 1;
-        while (last >= 0 && result[last] == U' ') last--;
-        
-        return result.substr(first, last - first + 1);
-    }
 };
-
 
 TextProcessor::TextProcessor() : pImpl{std::make_unique<Impl>()}{};
 std::string TextProcessor::clean_text( const std::string& text ) const {
