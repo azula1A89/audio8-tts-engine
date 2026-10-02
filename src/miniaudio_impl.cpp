@@ -666,8 +666,9 @@ bool MiniAudio::stop() {
 }
 
 bool MiniAudio::play_file(const char* file) {
-    bool ret = false;
-    if ( !loop_player_ ) {
+    bool ret = std::filesystem::exists(file);
+         ret &= std::filesystem::is_regular_file(file);
+    if ( ret && !loop_player_ ) {
         loop_player_ = make_unique_nothrow<LoopPlayer>(file, ma_standard_sample_rate_44100, 2.5f);
         ret = (loop_player_ && loop_player_->initialized());
     }
