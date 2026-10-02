@@ -87,7 +87,7 @@ public:
             if (is_useful_punctuation(c))
             {
                 if (c == last_punct)
-                    continue; // 连续相同标点跳过
+                    continue; // skip consecutive identical punctuation marks
                 last_punct = c;
             }
             else
@@ -163,7 +163,7 @@ public:
                 if ( !txt.empty() ) {
                     sentences.push_back(txt);
                 }
-                
+
                 start = i;
             } else {
                 i++;

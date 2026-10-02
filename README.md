@@ -460,6 +460,7 @@ This project uses the following open-source components:
 - [miniaudio](https://github.com/mackron/miniaudio)
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime)
 - [tokenizers-cpp](https://github.com/mlc-ai/tokenizers-cpp.git)
+- [uni-algo](https://github.com/uni-algo/uni-algo.git)
 
 Please refer to each project's own license and repository for the applicable terms.
 
@@ -483,4 +484,5 @@ Thanks to the authors and maintainers of:
 - fmt
 - nlohmann/json
 - miniaudio
+- uni-algo
 

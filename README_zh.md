@@ -485,6 +485,7 @@ Fast AR 同样拥有独立的 KV Cache。
 - [miniaudio](https://github.com/mackron/miniaudio)
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime)
 - [tokenizers-cpp](https://github.com/mlc-ai/tokenizers-cpp)
+- [uni-algo](https://github.com/uni-algo/uni-algo.git)
 
 请分别查看各项目的许可证及仓库，以了解对应的使用和分发条款。
 
@@ -512,3 +513,4 @@ Fast AR 同样拥有独立的 KV Cache。
 - fmt
 - nlohmann/json
 - miniaudio
+- uni-algo
