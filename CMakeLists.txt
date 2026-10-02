@@ -23,7 +23,7 @@
 cmake_minimum_required(VERSION 3.26)
 
 project(audio8 CXX)
-
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -161,6 +161,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(fmt)
 
+FetchContent_Declare(
+    uni-algo
+    URL https://github.com/uni-algo/uni-algo/archive/refs/tags/v1.2.0.zip
+    FIND_PACKAGE_ARGS 1.2 CONFIG
+)
+FetchContent_MakeAvailable(uni-algo)
+
+
 if(WIN32)
     set(ONNXURL https://github.com/microsoft/onnxruntime/releases/download/v1.29.0/onnxruntime-win-x64-1.29.0.zip)
     set(ONNXHASH SHA256=c9b4b7086b529ad814f428c1bad028e20a25d7dc0699836775faace4ab5b78b2)
@@ -252,6 +260,7 @@ target_link_libraries(audio8
         miniaudio
         onnxruntime_imported
         tokenizers_cpp
+        uni-algo::uni-algo
 )
 
 if(ONNXRUNTIME_CUDA)
@@ -347,10 +356,6 @@ add_custom_command(
 
   COMMAND ${CMAKE_COMMAND} -E copy_directory 
           ${CMAKE_CURRENT_SOURCE_DIR}/fonts
-          $<TARGET_FILE_DIR:${app_name}>/fonts
-
-  COMMAND ${CMAKE_COMMAND} -E copy_directory 
-          ${imgui_SOURCE_DIR}/misc/fonts
           $<TARGET_FILE_DIR:${app_name}>/fonts
 
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

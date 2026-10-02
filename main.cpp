@@ -57,7 +57,6 @@ SOFTWARE.
 #include <miniaudio_impl.hpp>
 
 #include <audio8_engine.hpp>
-#include <text_processor.hpp>
 
 using namespace std::chrono_literals;
 using json = nlohmann::json;
@@ -326,7 +325,7 @@ public:
 
     bool play_id(int idx) {
         size_t count = track_count();
-        if ( count == 0 || idx < 0 || idx > count ) return false;
+        if ( count == 0 || idx < 0 ) return false;
 
         auto wav_file = root_ / cache_ / fmt::format("{:05}.wav", idx);
         miniaudio_impl::stop_file();
@@ -485,7 +484,6 @@ int main(int argc, char** argv)
     ImGuiTheme::ApplyTweakedTheme(static_cast<ImGuiTheme::ImGuiTheme_>(settings.get().theme));
 
     auto cjk = io.Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf");
-    auto english = io.Fonts->AddFontFromFileTTF("fonts/Cousine-Regular.ttf");
 
     float xscale, yscale;
     glfwGetWindowContentScale((GLFWwindow *) main_window, &xscale, &yscale);
@@ -497,7 +495,7 @@ int main(int argc, char** argv)
     ImGui_ImplGlfw_InitForOpenGL(main_window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    ImGui::MarkdownConfig md_config{ NULL, NULL, NULL, NULL, { { english, true }, { english, true }, { english, false } }, NULL };
+    ImGui::MarkdownConfig md_config{ NULL, NULL, NULL, NULL, { { cjk, true }, { cjk, true }, { cjk, false } }, NULL };
 
     const int popup_spinner_flag = ImGuiWindowFlags_NoDecoration 
                              | ImGuiWindowFlags_NoMove 
@@ -610,7 +608,6 @@ int main(int argc, char** argv)
 
         // main window
         {
-            imgui_scoped::Font font(english);
             ImGui::Begin("main", NULL, ImGuiWindowFlags_MenuBar);
             
             // Menubar
@@ -634,13 +631,17 @@ int main(int argc, char** argv)
                             if ( ImGui::BeginMenu("recent") ) {
                                 static std::string session_recent = "";
                                 if (std::filesystem::exists(session_root_path) && std::filesystem::is_directory(session_root_path)) {
+                                    std::vector<std::string> recent_sessions;
                                     for (const auto& entry : std::filesystem::directory_iterator(session_root_path)) {
                                         if (entry.is_regular_file() && entry.path().extension() == ".json") {
-                                            std::string filename = entry.path().filename().string();
-                                            if ( ImGui::MenuItem(filename.c_str(), nullptr, session_recent == filename) ) {
-                                                session_recent = filename;
-                                                session = Session::from_json(entry.path().string().c_str());
-                                            }
+                                            recent_sessions.push_back(entry.path().filename().string());
+                                        }
+                                    }
+                                    std::sort(recent_sessions.begin(), recent_sessions.end());
+                                    for (const auto& filename : recent_sessions) {
+                                        if ( ImGui::MenuItem(filename.c_str(), nullptr, session_recent == filename) ) {
+                                            session_recent = filename;
+                                            session = Session::from_json((session_root_path / filename).string().c_str());
                                         }
                                     }
                                 }
@@ -939,16 +940,13 @@ int main(int argc, char** argv)
                 static int last_edit_count = -1;
                 static int edit_count = 0;
                 static bool btn_update_segmention = false;
-                static ImFont* editor_font = cjk;
                 bool disable_edit = engine->is_busy() || is_segmenting;
 
-                imgui_scoped::Font font(editor_font);
                 imgui_scoped::Disabled disable(disable_edit);
                 auto sz = ImGui::GetContentRegionAvail();
-                int edited = ImGui::InputTextMultiline("##text to speach", &txt,
+                edit_count += ImGui::InputTextMultiline("##text to speach", &txt,
                     ImVec2(-FLT_MIN, sz.y * 0.25f), 
                     0);
-                edit_count += edited;
 
                 bool should_update = (last_edit_count != edit_count);
                      should_update |= (last_segment_max_token != segment_max_token);
@@ -962,7 +960,6 @@ int main(int argc, char** argv)
                     is_segmenting = true;
                     last_edit_count = edit_count;
                     last_segment_max_token = segment_max_token;
-                    editor_font = engine->contains_cjk(txt) ? cjk : english;
 
                     split_text_status = std::async(std::launch::async, [&txt, &engine, &default_voice, &segment_max_token](){
                         return engine->split_text_by_tokens(txt, segment_max_token);
@@ -1223,7 +1220,6 @@ int main(int argc, char** argv)
                 if ( split_text_status.wait_for(10ms) == std::future_status::ready ) {
                     const auto& chunks = split_text_status.get();
                     if ( chunks.has_value() ) {
-                        TextProcessor processor;
 
                         if ( !session ) { session = make_unique_nothrow<Session>(); }
 
@@ -1231,7 +1227,7 @@ int main(int argc, char** argv)
                         Session::config_item_s item;
                         for (int i = 0; i < chunks->size(); i++) {
                             item.id = i;
-                            item.text = processor.clean_text(chunks.value()[i]);
+                            item.text = chunks.value()[i];
                             item.voice = default_voice;
                             item.selected = false;
                             item.done = false;
