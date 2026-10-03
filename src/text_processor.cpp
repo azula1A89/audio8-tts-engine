@@ -39,8 +39,7 @@ class TextProcessor::Impl {
 public:
     Impl() = default;
     ~Impl() = default;
-    std::string clean_text(std::string_view input)
-    {
+    std::string clean_text(std::string_view input) {
         // 1. NFKC normalization (full-width to half-width, handling combining characters, etc.)
         std::string normalized = una::norm::to_nfkc_utf8(input);
 
@@ -51,29 +50,23 @@ public:
         char32_t last_punct = 0;
 
         // 2. Filter, deduplicate, and convert types in a single pass
-        for (char32_t c : normalized | una::views::utf8)
-        {
+        for (char32_t c : normalized | una::views::utf8) {
             // Determine whether to keep the current character
             bool keep = false;
             if (una::codepoint::is_alphabetic(c) ||
                 una::codepoint::is_numeric(c)    ||
                 una::codepoint::is_whitespace(c) ||
-                is_useful_punctuation(c))
-            {
+                is_useful_punctuation(c)) {
                 keep = true;
-            }
-            else
-            {
+            } else {
                 keep = !should_remove(c);
             }
 
             if (!keep) continue;
 
             // Handle whitespace characters
-            if (una::codepoint::is_whitespace(c))
-            {
-                if (!last_was_space && !result.empty())
-                {
+            if (una::codepoint::is_whitespace(c)) {
+                if (!last_was_space && !result.empty()) {
                     result.push_back(' '); // unify to half-width space
                     last_was_space = true;
                 }
@@ -84,14 +77,11 @@ public:
             last_was_space = false;
 
             // Handle punctuation characters
-            if (is_useful_punctuation(c))
-            {
+            if (is_useful_punctuation(c)) {
                 if (c == last_punct)
                     continue; // skip consecutive identical punctuation marks
                 last_punct = c;
-            }
-            else
-            {
+            } else {
                 last_punct = 0;
             }
 
@@ -100,8 +90,7 @@ public:
         }
 
         // Remove trailing space if present
-        if (!result.empty() && result.back() == ' ')
-        {
+        if (!result.empty() && result.back() == ' ') {
             result.pop_back();
         }
 
@@ -196,17 +185,21 @@ private:
 
         if (is_control(c) || is_private_use(c) || is_noncharacter(c)) return true;
 
+        // ZWSP, ZWNJ, ZWJ BOM / Word Joiner
         if (c == 0x200B || c == 0x200C || c == 0x200D || c == 0xFEFF || c == 0x2060) return true;
 
         auto p = prop{c};
-        if (p.General_Category_So()) {
-            switch (c) {
-                case U'%': case U'$': case U'€': case U'£': case U'¥':
-                case U'+': case U'=': case U'×': case U'÷':
-                    return false;
-                default:
-                    return true;
-            }
+        if (p.General_Category_So() || p.General_Category_Sm() || p.General_Category_Sc() || p.General_Category_Sk()) {
+            // remove all:
+            // Other_Symbol -> most emoji
+            // Math_Symbol  -> ~ + - ...
+            // Currency_Symbol
+            // Modifier_Symbol
+            return true;
+        } else if (p.General_Category_Po()) {
+            // remove all
+            // Other_Punctuation
+            return true;
         }
 
         // Emoji blocks as a fallback
