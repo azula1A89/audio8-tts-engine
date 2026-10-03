@@ -521,9 +521,6 @@ int main(int argc, char** argv)
     std::filesystem::path session_root_path = settings.get().session_folder;
     std::vector<std::string> voices;
     std::string& default_voice = settings.get().default_voice;
-    std::string new_voice_name;
-    std::string transcript;
-    std::string ref_audio_path;
 
     std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>(settings.get().runtime_config);
     std::unique_ptr<Session> session = nullptr;
@@ -569,7 +566,8 @@ int main(int argc, char** argv)
                 
                 ImGui::SameLine();
                 if (ImGui::Button("choose")) {
-                    settings.get().model_folder = choose_folder();
+                    std::string folder = choose_folder();
+                    settings.get().model_folder = folder.empty() ? settings.get().model_folder : folder;
                     settings.sync();
                     paths = Audio8ModelPaths(settings.get().model_folder);
                     ImGui::CloseCurrentPopup();
@@ -759,6 +757,9 @@ int main(int argc, char** argv)
 
                         if (ImGui::BeginPopupModal("registration", NULL, ImGuiWindowFlags_AlwaysAutoResize))
                         {
+                            static std::string new_voice_name;
+                            static std::string transcript;
+                            static std::string ref_audio_path;
                             ImGui::InputText("voice name", &new_voice_name);
                             ImGui::InputText("transcript", &transcript);
                             ImGui::InputTextWithHint("##ref audio", "audio file path", &ref_audio_path);
@@ -768,12 +769,17 @@ int main(int argc, char** argv)
                             }
 
                             if (ImGui::Button("OK", ImVec2(120, 0))) {
-                                registration_status = std::async(std::launch::async, [&](){
-                                    
-                                    engine->registers(new_voice_name, transcript, ref_audio_path);
-                                });
-                                
-                                ImGui::CloseCurrentPopup();
+
+                                if ( new_voice_name.empty() ) {
+                                } else if ( transcript.empty() ) {
+                                } else if ( ref_audio_path.empty() ) {
+                                } else if ( !std::filesystem::exists(ref_audio_path) ) {
+                                } else {
+                                    registration_status = std::async(std::launch::async, [&](){
+                                        engine->registers(new_voice_name, transcript, ref_audio_path);
+                                    });
+                                     ImGui::CloseCurrentPopup();
+                                }
                             }
 
                             ImGui::SetItemDefaultFocus();
@@ -819,6 +825,7 @@ int main(int argc, char** argv)
                             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
                             if ( ImGui::Button(font.filename().string().c_str()) ) {
                                 font = choose_font_path();
+                                font = font.empty()? settings.get().font : font.string();
                                 if ( std::filesystem::is_regular_file(font) && 
                                     font.extension().string() == ".ttf") {
                                     settings.get().font = font.string();
