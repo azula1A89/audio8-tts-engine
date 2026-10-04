@@ -243,13 +243,21 @@ endif()
 
 find_package(OpenGL REQUIRED)
 
-file(GLOB_RECURSE _HDRS "include/*.hpp")
-file(GLOB_RECURSE _SRCS "src/*.cpp" "src/*.hpp")
-
-add_library(audio8 ${_SRCS} ${_HDRS})
+add_library(audio8 STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/miniaudio_impl.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/audio8_engine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/codec_decoder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/fast_ar_generator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/prompt_builder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/sampler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/slow_ar_generator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/text_processor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/voice_manager.cpp
+)
 
 target_include_directories(audio8 PUBLIC
-	${CMAKE_CURRENT_SOURCE_DIR}/include 
+	${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/audio8
 )
 
 target_link_libraries(audio8 
