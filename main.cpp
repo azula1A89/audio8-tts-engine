@@ -456,17 +456,119 @@ public:
 
 };
 
+class GuiContext {
+public:
+    UserSettings& ini;
+    std::unique_ptr<Audio8Engine> engine;
+    std::unique_ptr<Session> session;
+    Audio8ModelPaths paths;
+    std::filesystem::path session_root_path;
+    std::string& default_voice;
+    std::vector<std::string> voices;
+
+    std::future<void> engine_status = {};
+    std::future<void> registration_status = {};
+    std::future<std::optional<std::vector<std::string>>> split_text_status = {};
+    std::future<void> cancle_status = {};
+
+    bool is_initialized = false;
+    bool is_loading = false;
+    bool is_segmenting = false;
+    bool is_encoding = false;
+    bool is_cancelling = false;
+
+    float generate_progress = 0.0f;
+    int generate_id = -1;
+    int decode_id = -1;
+    float decode_eta = -1.0f;
+    std::atomic<int> request_done = 0;
+
+public:
+    explicit GuiContext(UserSettings& settings) :
+     ini(settings),
+     engine(std::make_unique<Audio8Engine>(settings.get().runtime_config)),
+     session(nullptr),
+     paths{ settings.get().model_folder  },
+     session_root_path{ settings.get().session_folder },
+     default_voice(settings.get().default_voice) {};
+
+    ~GuiContext() = default;
+};
+
 std::string choose_folder();
 std::string choose_audio_path();
 std::string choose_font_path();
 void imgui_parent_window();
-std::function<void(GLFWwindow*)> render_frame;
-UserSettings settings;
+void render_menubar( GuiContext& ctx );
+void render_progressbar( GuiContext& ctx );
+void render_segmention_table( GuiContext& ctx );
+void render_choose_model_popup( GuiContext& ctx );
+void render_registration_popup( GuiContext& ctx );
+void render_main_window( GuiContext& ctx );
+void render_frame(GLFWwindow* window) {
+    auto ctx = static_cast<GuiContext*>(glfwGetWindowUserPointer(window));
+
+    // Start the Dear ImGui frame
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    //root window
+    imgui_parent_window();
+
+    // default model path invalid
+    if ( !ctx->paths.check() ) {
+        // ask for models path
+        ImGui::OpenPopup("choose models path");
+        render_choose_model_popup(*ctx);
+    }else if ( !ctx->is_initialized ) {
+        if( ctx->engine->initialize(ctx->paths.root) )// engine initialize
+            ctx->is_initialized = true;
+
+        ctx->engine->set_generate_callback([&](float progress_in, int id_in){
+            ctx->generate_progress = progress_in;
+            ctx->generate_id = id_in;
+        });
+
+        ctx->engine->set_decoder_callback([&](std::vector<float> pcm_in, const int id_in){
+            if( ctx->session ) ctx->session->save_to_wav(pcm_in, id_in);
+            ctx->request_done.fetch_add(1);
+        });
+
+        ctx->engine->set_decoder_eta_callback([&](float eta_in, const int id_in){
+            ctx->decode_eta = eta_in;
+            ctx->decode_id = id_in;
+        });
+
+        // auto preload
+        if ( ctx->is_initialized ) {
+            ctx->is_loading = true;
+            ctx->engine_status = std::async(std::launch::async,[&](){
+                ctx->engine->preload_model();
+                ctx->is_loading = false;
+            });
+        }
+    }
+
+    if ( ctx->voices.empty() ) {
+        ctx->voices = ctx->engine->list_voices();
+    }
+
+    if ( ctx->session ) {
+        ctx->session->refresh_status();
+    }
+
+    // main window
+    render_main_window(*ctx);
+
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    glfwSwapBuffers(window);
+}
 
 int main(int argc, char** argv)
 {
     const char* glsl_version = "#version 330";
-
     if (glfwInit() == GL_FALSE){
         return GL_FALSE;
     }
@@ -485,8 +587,13 @@ int main(int argc, char** argv)
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    
+    UserSettings settings;
     settings.initialize();
 
+    GuiContext ctx{ settings };
+    
+    glfwSetWindowUserPointer(main_window, &ctx);
     glfwSetWindowSize(main_window, settings.get().window_width, settings.get().window_height);
 
     ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -510,797 +617,15 @@ int main(int argc, char** argv)
     ImGui_ImplGlfw_InitForOpenGL(main_window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    ImGui::MarkdownConfig md_config{ NULL, NULL, NULL, NULL, 
-        { { io.FontDefault, true }, { io.FontDefault, true }, { io.FontDefault, false } }, NULL };
-
-    const int popup_spinner_flag = ImGuiWindowFlags_NoDecoration 
-                             | ImGuiWindowFlags_NoMove 
-                             | ImGuiWindowFlags_NoBackground;
-
-    Audio8ModelPaths paths{ settings.get().model_folder  };
-    std::filesystem::path session_root_path = settings.get().session_folder;
-    std::vector<std::string> voices;
-    std::string& default_voice = settings.get().default_voice;
-
-    std::unique_ptr<Audio8Engine> engine = std::make_unique<Audio8Engine>(settings.get().runtime_config);
-    std::unique_ptr<Session> session = nullptr;
-    std::future<void> engine_status = {};
-    std::future<void> registration_status = {};
-    std::future<std::optional<std::vector<std::string>>> split_text_status = {};
-    std::future<void> cancle_status = {};
-
-    bool is_initialized = false;
-    bool is_loading = false;
-    bool is_segmenting = false;
-    bool is_encoding = false;
-    bool is_cancelling = false;
-
-    float generate_progress = 0.0f;
-    int generate_id = -1;
-    int decode_id = -1;
-    float decode_eta = -1.0f;
-    std::atomic<int> request_done = 0;
-
-    render_frame = [&](GLFWwindow* window){
-        // Start the Dear ImGui frame
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        //root window
-        imgui_parent_window();
-
-        // default modelspath invalid
-        if ( !paths.check() ) {
-
-            // ask for models path
-            ImGui::OpenPopup("choose models path");
-
-            imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
-            imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 4.0f);
-            imgui_scoped::StyleVar item_speacing(ImGuiStyleVar_ItemSpacing, {10.0f, 1.0f});
-            if (ImGui::BeginPopupModal("choose models path", NULL, ImGuiWindowFlags_AlwaysAutoResize))
-            {
-                ImGui::TextColored(ImColor(200,0,0,255), 
-                "current models path: %s invalid.", paths.root.c_str());
-                
-                ImGui::SameLine();
-                if (ImGui::Button("choose")) {
-                    std::string folder = choose_folder();
-                    settings.get().model_folder = folder.empty() ? settings.get().model_folder : folder;
-                    settings.sync();
-                    paths = Audio8ModelPaths(settings.get().model_folder);
-                    ImGui::CloseCurrentPopup();
-                }
-
-                {
-                    imgui_scoped::FontSize font(12.0f);
-                    ImGui::Text("%s", model_info);
-                    ImGui::TextLinkOpenURL(model_url);
-                    ImGui::Text("%s", model_folder);
-                }
-                ImGui::EndPopup();
-            }
-        
-        }else if ( !is_initialized ) {
-            if( engine->initialize(paths.root) )// engine initialize
-                is_initialized = true;
-
-            engine->set_generate_callback([&](float progress_in, int id_in){
-                generate_progress = progress_in;
-                generate_id = id_in;
-            });
-
-            engine->set_decoder_callback([&](std::vector<float> pcm_in, const int id_in){
-                if( session ) session->save_to_wav(pcm_in, id_in);
-                request_done.fetch_add(1);
-            });
-
-            engine->set_decoder_eta_callback([&](float eta_in, const int id_in){
-                decode_eta = eta_in;
-                decode_id = id_in;
-            });
-
-            // auto preload
-            if ( is_initialized ) {
-                is_loading = true;
-                engine_status = std::async(std::launch::async,[&](){
-                    engine->preload_model();
-                    is_loading = false;
-                });
-            }
-        }
-
-        if ( voices.empty() ) {
-            voices = engine->list_voices();
-        }
-
-        if ( session ) {
-            session->refresh_status();
-        }
-
-        // main window
-        {
-            ImGui::Begin("main", NULL, ImGuiWindowFlags_MenuBar);
-            
-            // Menubar
-            if( is_initialized ) {
-                imgui_scoped::StyleVar popup_rounding(ImGuiStyleVar_PopupRounding, 6.0f);
-                imgui_scoped::StyleVar item_speacing(ImGuiStyleVar_ItemSpacing, {20.0f, 5.0f});
-                imgui_scoped::Disabled disable(is_loading);
-                if (ImGui::BeginMenuBar()) {
-
-                    // session, export
-                   {
-                        imgui_scoped::Disabled disable(engine->is_busy());
-                        if (ImGui::BeginMenu("session")) {
-                            if ( ImGui::MenuItem("new") ) {
-                                if ( session ) {
-                                    session.reset();
-                                }
-                                session = make_unique_nothrow<Session>();
-                            }
-
-                            if ( ImGui::BeginMenu("recent") ) {
-                                static std::string session_recent = "";
-                                if (std::filesystem::is_directory(session_root_path)) {
-                                    std::vector<std::string> recent_sessions;
-                                    for (const auto& entry : std::filesystem::directory_iterator(session_root_path)) {
-                                        if (entry.is_regular_file() && entry.path().extension() == ".json") {
-                                            recent_sessions.push_back(entry.path().filename().string());
-                                        }
-                                    }
-                                    std::sort(recent_sessions.begin(), recent_sessions.end());
-                                    for (const auto& filename : recent_sessions) {
-                                        if ( ImGui::MenuItem(filename.c_str(), nullptr, session_recent == filename) ) {
-                                            session_recent = filename;
-                                            session = Session::from_json((session_root_path / filename).string().c_str());
-                                        }
-                                    }
-                                }
-                                ImGui::EndMenu();
-                            }
-
-                            {
-                                int& export_length = settings.get().export_length;
-                                imgui_scoped::Disabled disable(session == nullptr);
-                                if ( ImGui::BeginMenu("export") ) {
-                                    if (ImGui::DragInt("max audio length(second)", &export_length, 1.0f, 1)) {
-                                        settings.sync();
-                                    }
-
-                                    int& sample_rate = settings.get().export_sample_rate;
-                                    if (ImGui::DragInt("sample rate", &sample_rate, 100.0f, 8000, 96000)) {
-                                        settings.sync();
-                                    }
-
-                                    std::string folder = settings.get().export_folder;
-                                    if (ImGui::InputTextWithHint("##export to folder", "export to folder", &folder)) {
-                                        if (!folder.empty() && std::filesystem::is_directory(folder)) {
-                                            settings.get().export_folder = folder;
-                                            settings.sync();
-                                        }
-                                    }
-                                    ImGui::SameLine();
-                                    if (ImGui::Button("choose folder")) {
-                                        folder = choose_folder();
-                                        if (!folder.empty() && std::filesystem::is_directory(folder)) {
-                                            settings.get().export_folder = folder;
-                                            settings.sync();
-                                        }
-                                    }
-                                    if ( ImGui::Button("export") ) {
-                                        if ( session->is_playing_list() ) {
-                                            session->stop_playlist();
-                                        }
-                                        session->export_audio(export_length, settings.get().export_folder.c_str(), sample_rate);
-                                    }
-                                    ImGui::EndMenu();
-                                }
-                            }
-
-                            ImGui::EndMenu();
-                        }
-                    }
-
-                    // run, cancle
-                    {
-                        imgui_scoped::Disabled disable(session == nullptr);
-                        std::string status_text = engine->is_busy() ? "cancle" : "run";
-                        if ( ImGui::MenuItem(status_text.c_str()) ) {
-                            if ( !engine->is_busy() ) {
-                                request_done.store(0);
-                                session->request_count() = 0;
-
-                                TTSRequest request{};
-                                for (const auto& item : session->configs()) {
-                                    if ( item.done ) { continue; } //skip processed item
-                                    request.id = item.id;
-                                    request.text = item.text;
-                                    request.voice_name = item.voice;
-                                    request.max_new_tokens = 1024;
-                                    engine->push(request);
-                                    session->request_count()++;
-                                }
-                            } else {
-                                if ( !is_cancelling ) {
-                                    is_cancelling = true;
-                                    cancle_status = std::async(std::launch::async,[&](){
-                                        engine->cancel();
-                                    });
-                                }
-                            }
-                        }
-
-                        // play tracks
-                        {
-                            // imgui_scoped::Disabled disable( session->is_playing_file() );
-                            std::string status_txt = session->is_playing_list() ? "stop":"play";
-                            if ( ImGui::MenuItem(status_txt.c_str()) ) {
-                                if( !session->is_playing_list() ) {
-                                    session->start_playlist();
-                                } else {
-                                    session->stop_playlist();
-                                }
-                            }
-                        }
-
-                    }
-
-                    // voice registration (voice clone)
-                    {
-                        imgui_scoped::Disabled disable( is_loading );
-                        if (ImGui::MenuItem("registration")) {
-
-                            ImGui::OpenPopup("registration");
-                        }
-
-                        if (ImGui::BeginPopupModal("registration", NULL, ImGuiWindowFlags_AlwaysAutoResize))
-                        {
-                            static std::string new_voice_name;
-                            static std::string transcript;
-                            static std::string ref_audio_path;
-                            ImGui::InputText("voice name", &new_voice_name);
-                            ImGui::InputText("transcript", &transcript);
-                            ImGui::InputTextWithHint("##ref audio", "audio file path", &ref_audio_path);
-                            ImGui::SameLine();
-                            if (ImGui::Button("choose")) {
-                                ref_audio_path = choose_audio_path();
-                            }
-
-                            if (ImGui::Button("OK", ImVec2(120, 0))) {
-
-                                if ( new_voice_name.empty() ) {
-                                } else if ( transcript.empty() ) {
-                                } else if ( ref_audio_path.empty() ) {
-                                } else if ( !std::filesystem::exists(ref_audio_path) ) {
-                                } else {
-                                    registration_status = std::async(std::launch::async, [&](){
-                                        engine->registers(new_voice_name, transcript, ref_audio_path);
-                                    });
-                                     ImGui::CloseCurrentPopup();
-                                }
-                            }
-
-                            ImGui::SetItemDefaultFocus();
-                            ImGui::SameLine();
-                            if (ImGui::Button("Cancel", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
-                            ImGui::EndPopup();
-                        }
-                    }
-
-                    // settings
-                    if (ImGui::BeginMenu("settings")) {
-
-                        if(ImGui::BeginMenu("user interface")) {
-
-                            int& theme = settings.get().theme;
-                            if( ImGui::BeginCombo("theme", ImGuiTheme::ImGuiTheme_Name(static_cast<ImGuiTheme::ImGuiTheme_>(theme))) ) {
-                                for (int i = 0; i< ImGuiTheme::ImGuiTheme_Count; i++) {
-                                    imgui_scoped::ID id(i);
-                                    
-                                    if(ImGui::Selectable(ImGuiTheme::ImGuiTheme_Name((ImGuiTheme::ImGuiTheme_)i), theme == i)) {
-                                        theme = (ImGuiTheme::ImGuiTheme_)i;
-                                        settings.sync();
-                                        float size1 = ImGui::GetStyle().FontSizeBase;
-                                        float size2 = ImGui::GetStyle().FontScaleDpi;
-                                        float size3 = ImGui::GetStyle().FontScaleMain;
-                                        ImGuiTheme::ApplyTweakedTheme(static_cast<ImGuiTheme::ImGuiTheme_>(theme));
-                                        ImGui::GetStyle().FontSizeBase = size1;
-                                        ImGui::GetStyle().FontScaleDpi = size2;
-                                        ImGui::GetStyle().FontScaleMain = size3;
-                                    }
-                                }
-                                ImGui::EndCombo();
-                            }
-
-                            float& font_scale = settings.get().font_scale_main;
-                            if (ImGui::DragFloat("font scale", &font_scale, 0.01f, 0.2f, 3.0f)) {
-                                ImGui::GetStyle().FontScaleMain = font_scale;
-                                settings.sync();
-                            }
-
-                            imgui_scoped::StyleVar var(ImGuiStyleVar_FrameRounding, 8);
-                            static std::filesystem::path font = settings.get().font;
-                            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-                            if ( ImGui::Button(font.filename().string().c_str()) ) {
-                                font = choose_font_path();
-                                font = font.empty()? settings.get().font : font.string();
-                                if ( std::filesystem::is_regular_file(font) && 
-                                    font.extension().string() == ".ttf") {
-                                    settings.get().font = font.string();
-                                    settings.sync();
-                                    ImGui::GetIO().FontDefault = io.Fonts->AddFontFromFileTTF(font.string().c_str(), 16.0f);
-                                }
-                            }
-
-                            ImGui::EndMenu();
-                        }
-
-                        if ( ImGui::BeginMenu("onnxruntime") ) {
-                            uint32_t step = 1;
-                            const ImGuiDataType_ type = ImGuiDataType_U32;
-                            static bool value_changed = false;
-                            static uint32_t n = std::thread::hardware_concurrency();
-                            uint32_t& slowar_t_num = settings.get().runtime_config.slow_ar_thread_num;
-                            uint32_t& fastar_t_num = settings.get().runtime_config.fast_ar_thread_num;
-                            uint32_t& encoder_t_num = settings.get().runtime_config.codec_encoder_thread_num;
-                            uint32_t& decoder_t_num = settings.get().runtime_config.codec_decoder_thread_num;
-                            ExecutionProvider& ep = settings.get().runtime_config.execution_provider;
-
-                            if (ImGui::RadioButton( "CPU", ep == ExecutionProvider::CPU)) {
-                                ep = ExecutionProvider::CPU;
-                                value_changed = true;
-                                settings.sync();
-                            }
-                            ImGui::SameLine();
-                            if (ImGui::RadioButton( "GPU", ep == ExecutionProvider::GPU)) {
-                                ep = ExecutionProvider::GPU;
-                                value_changed = true;
-                                settings.sync();
-                            }
-
-                            if ( ImGui::InputScalar("slow ar thread", type, &slowar_t_num, &step) ) {
-                                slowar_t_num = std::clamp(slowar_t_num, 1u, n);
-                                value_changed = true;
-                                settings.sync();
-                            }
-                            if ( ImGui::InputScalar("fast ar thread", type, &fastar_t_num, &step) ) {
-                                fastar_t_num = std::clamp(fastar_t_num, 1u, n);
-                                value_changed = true;
-                                settings.sync();
-                            }
-
-                            if ( ImGui::InputScalar("encoder thread", type, &encoder_t_num, &step) ) {
-                                encoder_t_num = std::clamp(encoder_t_num, 1u, n);
-                                value_changed = true;
-                                settings.sync();
-                            }
-
-                            if ( ImGui::InputScalar("decoder thread", type, &decoder_t_num, &step) ) {
-                                decoder_t_num = std::clamp(decoder_t_num, 1u, n);
-                                value_changed = true;
-                                settings.sync();
-                            }
-                            if (value_changed) {
-                                imgui_scoped::StyleVar var(ImGuiStyleVar_FrameRounding, 8);
-                                if ( ImGui::Button("apply", ImVec2(-1.0f, 0.0f)) ) {
-                                    value_changed = false;
-                                    engine->cancel();
-                                    engine = std::make_unique<Audio8Engine>(settings.get().runtime_config);
-                                    is_initialized = false;
-                                }
-                            }
-                            ImGui::EndMenu();
-                        }
-                        
-                        ImGui::EndMenu();
-                    }
-
-                    // help, about
-                    if (ImGui::BeginMenu("help")) 
-                    {
-                        static ImVec2 md_size = {900, 500};
-
-                        if ( imgui_scoped::Child help = imgui_scoped::Child("help", md_size) ) {
-                            ImGui::Text("You can download model from:");
-                            {
-                                imgui_scoped::Indent indent;
-                                imgui_scoped::FontSize font_size(14.0f);
-                                ImGui::TextLinkOpenURL(model_url);
-                                ImGui::TextLinkOpenURL(backup_url);
-                            }
-
-                            ImGui::Markdown(help_text.c_str(), help_text.length(), md_config);
-                        }
-                        ImGui::EndMenu();
-                    }
-
-                    ImGui::EndMenuBar();
-                }
-            }
-
-            // Progress bar
-            {
-                imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
-                imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
-
-                // "Loading" progress bar
-                if ( is_loading ) {
-                    ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Loading..");
-                }
-
-                // "Encoding" progress bar
-                if ( is_encoding ) {
-                    ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Encoding..");
-                }
-
-                // "Generating" "Total" progress bar
-                if( is_initialized && engine->is_busy() && session ){
-                    ImGui::ProgressBar(generate_progress, ImVec2(-1.0f, 0.0f), "Generating..");
-                    ImGui::ProgressBar(session->progress(), ImVec2(-1.0f, 0.0f), fmt::format("{}/{}", request_done.load(), session->request_count()).c_str());
-                }
-
-                {
-                    bool open = is_segmenting || is_cancelling;
-                    if( open ) {
-                        if ( !ImGui::IsPopupOpen("my_spinner_popup") ) {
-                            ImGui::OpenPopup("my_spinner_popup");
-                        }
-                    }
-
-                    // Always at center
-                    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-                    ImVec2 size = ImGui::GetMainViewport()->WorkSize;
-                    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-                    if (ImGui::BeginPopupModal("my_spinner_popup", &open, popup_spinner_flag)) {
-                        
-                        float r = (size.x > size.y ? size.x:size.y) * 0.5f * 0.1f;
-                        if ( r < 10 ) { ImGui::CloseCurrentPopup(); }
-                        auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];                        
-                        ImSpinner::SpinnerRainbow("rainbow", r, 2.f, color, 8.f);
-                        
-                        ImGui::EndPopup();
-                    }
-                }
-            }
-
-            // Text input + chunk info table
-            if( is_initialized  && session) {
-                std::string& origin_text = session->text();
-                int& segment_max_token = settings.get().segment_max_token;
-                static bool enable_edit_trigger = false;
-                static int last_segment_max_token = -1;
-                static int last_edit_count = -1;
-                static int edit_count = 0;
-                static bool btn_update_segmention = false;
-                bool disable_edit = engine->is_busy() || is_segmenting;
-
-                imgui_scoped::Disabled disable(disable_edit);
-                auto sz = ImGui::GetContentRegionAvail();
-                edit_count += ImGui::InputTextMultiline("##text to speach", &origin_text,
-                    ImVec2(-FLT_MIN, sz.y * 0.25f), 
-                    0);
-
-                bool should_update = (last_edit_count != edit_count);
-                     should_update |= (last_segment_max_token != segment_max_token);
-                     should_update &= !is_loading;
-                     should_update &= !is_segmenting;
-                     should_update &= enable_edit_trigger;
-                     should_update |= btn_update_segmention;
-                     
-                if( should_update ) {
-                    btn_update_segmention = false;
-                    is_segmenting = true;
-                    last_edit_count = edit_count;
-                    last_segment_max_token = segment_max_token;
-
-                    split_text_status = std::async(std::launch::async, [&origin_text, &engine, &default_voice, &segment_max_token](){
-                        return engine->split_text_by_tokens(origin_text, segment_max_token);
-                    });
-                }
-                
-                if( imgui_scoped::Child chunk_info = imgui_scoped::Child("##chunk info") ) {
-                    ImGuiTableColumnFlags table_flags = 0//ImGuiTableFlags_Borders
-                                    | ImGuiTableFlags_ScrollY
-                                    | ImGuiTableFlags_RowBg;
-                    ImGuiSelectableFlags select_flags = ImGuiSelectableFlags_SpanAllColumns 
-                                    | ImGuiSelectableFlags_AllowDoubleClick
-                                    | ImGuiSelectableFlags_AllowOverlap;
-                    ImGuiTableColumnFlags column_flags = ImGuiTableColumnFlags_WidthFixed;
-
-                    imgui_scoped::StyleVar f_padding(ImGuiStyleVar_FramePadding, {0.0f, 0.0f});
-                    imgui_scoped::StyleVar s_txt_align(ImGuiStyleVar_SelectableTextAlign, {0.5f, 0.5f});
-
-                    if(imgui_scoped::Table table = imgui_scoped::Table("##chunk table", 4, table_flags)){
-                        float ax = ImGui::GetContentRegionAvail().x;
-                        ImGui::TableSetupColumn("seq", column_flags, 0.04f * ax);
-                        ImGui::TableSetupColumn("text", column_flags, 0.8f * ax );
-                        ImGui::TableSetupColumn("status", column_flags, 0.06f * ax);
-                        ImGui::TableSetupColumn("options", column_flags, 0.1f * ax);
-                        ImGui::TableSetupScrollFreeze(0, 1);
-                        ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
-
-                        // column 0
-                        ImGui::TableSetColumnIndex(0);
-                        imgui_scoped::TableTextCentered("seq");
-
-                        // column 1
-                        ImGui::TableSetColumnIndex(1);
-                        auto str = fmt::format("segment: [ {} token limit ]", segment_max_token);
-                        if(ImGui::Selectable(str.c_str())) {
-                            ImGui::OpenPopup("my_segment_popup");
-                        }
-
-                        if (ImGui::BeginPopup("my_segment_popup")) {
-                            uint32_t step = 1;
-                            if (ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step)) {
-                                segment_max_token = std::max(5, segment_max_token);
-                                settings.sync();
-                            }
-                            
-                            ImGui::Checkbox("edit trigger segmention", &enable_edit_trigger);
-                            if ( ImGui::Button("update segmention", {-1,0}) ) {
-                                btn_update_segmention = true;
-                            }
-                            ImGui::EndPopup();
-                        }
-
-                        // column 2
-                        ImGui::TableSetColumnIndex(2);
-                        if(ImGui::Selectable("status")) {
-                            ImGui::OpenPopup("my_status_popup");
-                        }
-
-                        if (ImGui::BeginPopup("my_status_popup")) {
-                            if ( ImGui::MenuItem("done") ) {
-                                session->set_done_value(true);
-                            }
-                            if ( ImGui::MenuItem("todo") ) {
-                                session->set_done_value(false);
-                            }
-                            ImGui::EndPopup();
-                        }
-
-                        // column 3
-                        ImGui::TableSetColumnIndex(3);
-                        if(ImGui::Selectable("option")) {
-                            ImGui::OpenPopup("my_option_popup");
-                        }
-
-                        if (ImGui::BeginPopup("my_option_popup")) {
-                            for (const auto& voice : voices ) {
-                                if ( ImGui::MenuItem( voice.c_str(), NULL, default_voice == voice) ) {
-                                    default_voice = voice;
-                                    session->set_default_voice(default_voice);
-                                    settings.sync();
-                                }
-                            }
-                            ImGui::EndPopup();
-                        }
-
-                        
-
-                        imgui_scoped::StyleVar s_var(ImGuiStyleVar_SelectableRounding, 12.0f);
-
-                        ImGuiListClipper clipper;
-                        clipper.Begin(session->configs().size());
-
-                        static int last_playing_id = -1;
-                        static int last_selected_seq = -1;
-                        static int edit_select_id = -1;
-                        size_t num = session->track_count();
-
-                        bool is_shift_down = ImGui::IsKeyDown(ImGuiKey_LeftShift);
-                        bool is_delete_down = ImGui::IsKeyDown(ImGuiKey_Delete);
-                        if ( disable_edit ) {
-                            session->unselected_all();
-                        }
-
-                        while (clipper.Step()) {
-                            for (int seq = clipper.DisplayStart; seq < clipper.DisplayEnd; seq++) {
-                                auto& cfg = session->configs()[seq];
-                                bool generate_ongoing = ( cfg.id == generate_id );
-                                    generate_ongoing &= engine->is_busy();
-                                bool decode_ongoing = ( cfg.id == decode_id );
-                                    decode_ongoing &= engine->is_decoding();
-                                bool selected = generate_ongoing;
-                                    selected |= ( cfg.selected );
-
-                                if ( generate_ongoing ) {
-                                    ImGui::SetScrollHereY(0.5f);
-                                }
-
-                                imgui_scoped::ID id(seq);
-                                ImGui::TableNextRow();
-
-                                ImGui::TableSetColumnIndex(0); 
-                                if(ImGui::Selectable(std::to_string(cfg.id).c_str(), selected, select_flags)) {
-
-                                    //toggle play
-                                    if ( !session->is_playing_file() ) {
-
-                                        if ( session->play_id(cfg.id) ) {
-                                            last_playing_id = cfg.id;
-                                        }
-                                    } else if(last_playing_id == cfg.id) {
-                                        session->stop_file();
-                                        last_playing_id = -1;
-                                    } else {
-                                        session->stop_file();
-                                        if ( session->play_id(cfg.id) ) {
-                                            last_playing_id = cfg.id;
-                                        }
-                                    }
-
-                                    if ( is_shift_down ) { // range select
-                                        if( last_selected_seq >= 0 ) {
-                                            int start = std::min(last_selected_seq, (int)seq);
-                                            int end = std::max(last_selected_seq, (int)seq);
-
-                                            session->unselected_all();
-                                            for (size_t j = start; j <= end; j++) {
-                                                session->configs()[j].selected = true;
-                                            }
-                                        }
-                                    } else {
-                                        last_selected_seq = seq;
-                                        session->unselected_all();
-                                        session->configs()[seq].selected = true;
-                                    }
-                                }
-
-                                if (ImGui::IsItemFocused()) {
-                                    if (ImGui::IsMouseDoubleClicked(0)) {
-                                        edit_select_id = last_selected_seq;
-                                    }
-                                }
-
-                                if ( edit_select_id != last_selected_seq ) {
-                                    edit_select_id = -1;
-                                }
-
-                                ImGui::TableSetColumnIndex(1);
-                                if ( edit_select_id == cfg.id ) {
-                                    ImGui::SetNextItemWidth(0.77f * ax);
-                                    ImGui::InputText("##text", &cfg.text);
-                                } else {
-                                    imgui_scoped::TableTextCentered(cfg.text.c_str());
-                                }
-
-                                ImGui::TableSetColumnIndex(2);
-
-                                if ( decode_ongoing || generate_ongoing ) {
-                                    ImGui::SameLine();
-                                    float r = ImGui::GetFrameHeight() * 0.5f;
-                                    auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
-                                    float cell_width = ImGui::GetContentRegionAvail().x;
-                                    float offset_x = cell_width* 0.5f - r;
-                                    if (offset_x > 0.0f) {
-                                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
-                                    }
-                                    int arcs = decode_ongoing?2:1;
-                                    
-                                    ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
-                                } else if(  last_playing_id == cfg.id ) {
-                                    ImGui::SameLine();
-                                    float r = ImGui::GetFrameHeight() * 0.5f;
-                                    auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
-                                    float cell_width = ImGui::GetContentRegionAvail().x;
-                                    float offset_x = cell_width* 0.5f - r;
-                                    if (offset_x > 0.0f) {
-                                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
-                                    }
-                                    ImSpinner::SpinnerBarChartRainbow("playing", r, 2.0f, color, 4.0f);
-
-                                } else {
-                                    auto text = cfg.done?"done":"todo";
-                                    if ( ImGui::Selectable(text) ) {
-                                        ImGui::OpenPopup("my_done_popup");
-                                    }
-
-                                    if (ImGui::BeginPopup("my_done_popup")) {
-                                        if ( ImGui::MenuItem("done") ) {
-                                            cfg.done = true;
-                                        }
-                                        if ( ImGui::MenuItem("todo") ) {
-                                            cfg.done = false;
-                                        }
-                                        ImGui::EndPopup();
-                                    }
-                                }
-
-                                ImGui::TableSetColumnIndex(3);
-                                if ( ImGui::Selectable(cfg.voice.c_str()) ) {
-                                    ImGui::OpenPopup("my_voices_popup");
-                                }
-
-                                if (ImGui::BeginPopup("my_voices_popup")) {
-                                    for (int m = 0; m < voices.size(); m++) {
-                                        imgui_scoped::ID id(m);
-                                        if ( ImGui::MenuItem( voices[m].c_str(), NULL, cfg.voice == voices[m]) ) {
-                                            cfg.voice = voices[m];
-                                        }
-                                    }
-                                    ImGui::EndPopup();
-                                }
-
-                            }
-                        }
-
-                        if ( is_delete_down ) {
-                            last_selected_seq = -1;
-                            session->delete_selected();
-                        }
-                        
-                    }
-                }
-
-            }
-
-            // Check if the cancellation operation has completed
-            if ( cancle_status.valid() ) {
-                if ( cancle_status.wait_for(10ms) == std::future_status::ready ) {
-                    cancle_status.get();
-                    cancle_status = {};
-                    session->request_count() = 0;
-                    is_cancelling = false;
-                }
-            }
-
-            // Check if the text splitting operation has completed
-            if ( split_text_status.valid() ) {
-
-                if ( split_text_status.wait_for(10ms) == std::future_status::ready ) {
-                    const auto& chunks = split_text_status.get();
-                    if ( chunks.has_value() ) {
-
-                        if ( !session ) { session = make_unique_nothrow<Session>(); }
-
-                        session->configs().clear();
-                        Session::config_item_s item;
-                        for (int i = 0; i < chunks->size(); i++) {
-                            item.id = i;
-                            item.text = chunks.value()[i];
-                            item.voice = default_voice;
-                            item.selected = false;
-                            item.done = false;
-                            session->configs().push_back(item);
-                        }
-                    }
-                    split_text_status = {};
-                    is_segmenting = false;
-                }
-            }
-
-            // Check if the registration operation has completed
-            if ( registration_status.valid() ) {
-                is_encoding = true;
-
-                if ( std::future_status::ready == registration_status.wait_for(10ms) ) {
-                    registration_status.get();
-                    registration_status = {};
-                    is_encoding = false;
-                    voices = engine->list_voices();
-                }
-            }
-
-            ImGui::End();
-        }
-
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(main_window);
-    };
-
     glfwSetWindowRefreshCallback(main_window, [](GLFWwindow* window){
         render_frame(window);
     });
 
     glfwSetFramebufferSizeCallback(main_window, [](GLFWwindow* window, int width, int height){
-        settings.get().window_width = width;
-        settings.get().window_height = height;
-        settings.sync();
+        auto* ctx = static_cast<GuiContext*>(glfwGetWindowUserPointer(window));
+        ctx->ini.get().window_width = width;
+        ctx->ini.get().window_height = height;
+        ctx->ini.sync();
         glViewport(0, 0, width, height);
         render_frame(window);
     });
@@ -1313,8 +638,8 @@ int main(int argc, char** argv)
         render_frame(main_window);
     }
 
-    if ( session ) {
-        session.reset();
+    if ( ctx.session ) {
+        ctx.session.reset();
     }
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
@@ -1390,6 +715,727 @@ void imgui_parent_window()
         ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
         ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_AutoHideTabBar);
     }
+    ImGui::End();
+}
+
+void render_menubar( GuiContext& ctx ) {
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Menubar
+    if( ctx.is_initialized ) {
+        imgui_scoped::StyleVar popup_rounding(ImGuiStyleVar_PopupRounding, 6.0f);
+        imgui_scoped::StyleVar item_speacing(ImGuiStyleVar_ItemSpacing, {20.0f, 5.0f});
+        imgui_scoped::Disabled disable(ctx.is_loading);
+        if (ImGui::BeginMenuBar()) {
+
+            // session, export
+            {
+                imgui_scoped::Disabled disable(ctx.engine->is_busy());
+                if (ImGui::BeginMenu("session")) {
+                    if ( ImGui::MenuItem("new") ) {
+                        if ( ctx.session ) {
+                            ctx.session.reset();
+                        }
+                        ctx.session = make_unique_nothrow<Session>();
+                    }
+
+                    if ( ImGui::BeginMenu("recent") ) {
+                        static std::string session_recent = "";
+                        if (std::filesystem::is_directory(ctx.session_root_path)) {
+                            std::vector<std::string> recent_sessions;
+                            for (const auto& entry : std::filesystem::directory_iterator(ctx.session_root_path)) {
+                                if (entry.is_regular_file() && entry.path().extension() == ".json") {
+                                    recent_sessions.push_back(entry.path().filename().string());
+                                }
+                            }
+                            std::sort(recent_sessions.begin(), recent_sessions.end());
+                            for (const auto& filename : recent_sessions) {
+                                if ( ImGui::MenuItem(filename.c_str(), nullptr, session_recent == filename) ) {
+                                    session_recent = filename;
+                                    ctx.session = Session::from_json((ctx.session_root_path / filename).string().c_str());
+                                }
+                            }
+                        }
+                        ImGui::EndMenu();
+                    }
+
+                    {
+                        int& export_length = ctx.ini.get().export_length;
+                        imgui_scoped::Disabled disable(ctx.session == nullptr);
+                        if ( ImGui::BeginMenu("export") ) {
+                            if (ImGui::DragInt("max audio length(second)", &export_length, 1.0f, 1)) {
+                                ctx.ini.sync();
+                            }
+
+                            int& sample_rate = ctx.ini.get().export_sample_rate;
+                            if (ImGui::DragInt("sample rate", &sample_rate, 100.0f, 8000, 96000)) {
+                                ctx.ini.sync();
+                            }
+
+                            std::string folder = ctx.ini.get().export_folder;
+                            if (ImGui::InputTextWithHint("##export to folder", "export to folder", &folder)) {
+                                if (!folder.empty() && std::filesystem::is_directory(folder)) {
+                                    ctx.ini.get().export_folder = folder;
+                                    ctx.ini.sync();
+                                }
+                            }
+                            ImGui::SameLine();
+                            if (ImGui::Button("choose folder")) {
+                                folder = choose_folder();
+                                if (!folder.empty() && std::filesystem::is_directory(folder)) {
+                                    ctx.ini.get().export_folder = folder;
+                                    ctx.ini.sync();
+                                }
+                            }
+                            if ( ImGui::Button("export") ) {
+                                if ( ctx.session->is_playing_list() ) {
+                                    ctx.session->stop_playlist();
+                                }
+                                ctx.session->export_audio(export_length, ctx.ini.get().export_folder.c_str(), sample_rate);
+                            }
+                            ImGui::EndMenu();
+                        }
+                    }
+
+                    ImGui::EndMenu();
+                }
+            }
+
+            // run, cancle
+            {
+                imgui_scoped::Disabled disable(ctx.session == nullptr);
+                std::string status_text = ctx.engine->is_busy() ? "cancle" : "run";
+                if ( ImGui::MenuItem(status_text.c_str()) ) {
+                    if ( !ctx.engine->is_busy() ) {
+                        ctx.request_done.store(0);
+                        ctx.session->request_count() = 0;
+
+                        TTSRequest request{};
+                        for (const auto& item : ctx.session->configs()) {
+                            if ( item.done ) { continue; } //skip processed item
+                            request.id = item.id;
+                            request.text = item.text;
+                            request.voice_name = item.voice;
+                            request.max_new_tokens = 1024;
+                            ctx.engine->push(request);
+                            ctx.session->request_count()++;
+                        }
+                    } else {
+                        if ( !ctx.is_cancelling ) {
+                            ctx.is_cancelling = true;
+                            ctx.cancle_status = std::async(std::launch::async,[&](){
+                                ctx.engine->cancel();
+                            });
+                        }
+                    }
+                }
+
+                // play tracks
+                {
+                    // imgui_scoped::Disabled disable( session->is_playing_file() );
+                    std::string status_txt = ctx.session->is_playing_list() ? "stop":"play";
+                    if ( ImGui::MenuItem(status_txt.c_str()) ) {
+                        if( !ctx.session->is_playing_list() ) {
+                            ctx.session->start_playlist();
+                        } else {
+                            ctx.session->stop_playlist();
+                        }
+                    }
+                }
+
+            }
+
+            // voice registration (voice clone)
+            {
+                imgui_scoped::Disabled disable( ctx.is_loading );
+                if (ImGui::MenuItem("registration")) {
+
+                    ImGui::OpenPopup("registration");
+                }
+                render_registration_popup(ctx);
+            }
+
+            // settings
+            if (ImGui::BeginMenu("settings")) {
+
+                if(ImGui::BeginMenu("user interface")) {
+
+                    int& theme = ctx.ini.get().theme;
+                    if( ImGui::BeginCombo("theme", ImGuiTheme::ImGuiTheme_Name(static_cast<ImGuiTheme::ImGuiTheme_>(theme))) ) {
+                        for (int i = 0; i< ImGuiTheme::ImGuiTheme_Count; i++) {
+                            imgui_scoped::ID id(i);
+                            
+                            if(ImGui::Selectable(ImGuiTheme::ImGuiTheme_Name((ImGuiTheme::ImGuiTheme_)i), theme == i)) {
+                                theme = (ImGuiTheme::ImGuiTheme_)i;
+                                ctx.ini.sync();
+                                float size1 = ImGui::GetStyle().FontSizeBase;
+                                float size2 = ImGui::GetStyle().FontScaleDpi;
+                                float size3 = ImGui::GetStyle().FontScaleMain;
+                                ImGuiTheme::ApplyTweakedTheme(static_cast<ImGuiTheme::ImGuiTheme_>(theme));
+                                ImGui::GetStyle().FontSizeBase = size1;
+                                ImGui::GetStyle().FontScaleDpi = size2;
+                                ImGui::GetStyle().FontScaleMain = size3;
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    float& font_scale = ctx.ini.get().font_scale_main;
+                    if (ImGui::DragFloat("font scale", &font_scale, 0.01f, 0.2f, 3.0f)) {
+                        ImGui::GetStyle().FontScaleMain = font_scale;
+                        ctx.ini.sync();
+                    }
+
+                    imgui_scoped::StyleVar var(ImGuiStyleVar_FrameRounding, 8);
+                    static std::filesystem::path font = ctx.ini.get().font;
+                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                    if ( ImGui::Button(font.filename().string().c_str()) ) {
+                        font = choose_font_path();
+                        font = font.empty()? ctx.ini.get().font : font.string();
+                        if ( std::filesystem::is_regular_file(font) && 
+                            font.extension().string() == ".ttf") {
+                            ctx.ini.get().font = font.string();
+                            ctx.ini.sync();
+                            ImGui::GetIO().FontDefault = io.Fonts->AddFontFromFileTTF(font.string().c_str(), 16.0f);
+                        }
+                    }
+
+                    ImGui::EndMenu();
+                }
+
+                if ( ImGui::BeginMenu("onnxruntime") ) {
+                    uint32_t step = 1;
+                    const ImGuiDataType_ type = ImGuiDataType_U32;
+                    static bool value_changed = false;
+                    static uint32_t n = std::thread::hardware_concurrency();
+                    uint32_t& slowar_t_num = ctx.ini.get().runtime_config.slow_ar_thread_num;
+                    uint32_t& fastar_t_num = ctx.ini.get().runtime_config.fast_ar_thread_num;
+                    uint32_t& encoder_t_num = ctx.ini.get().runtime_config.codec_encoder_thread_num;
+                    uint32_t& decoder_t_num = ctx.ini.get().runtime_config.codec_decoder_thread_num;
+                    ExecutionProvider& ep = ctx.ini.get().runtime_config.execution_provider;
+
+                    if (ImGui::RadioButton( "CPU", ep == ExecutionProvider::CPU)) {
+                        ep = ExecutionProvider::CPU;
+                        value_changed = true;
+                        ctx.ini.sync();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton( "GPU", ep == ExecutionProvider::GPU)) {
+                        ep = ExecutionProvider::GPU;
+                        value_changed = true;
+                        ctx.ini.sync();
+                    }
+
+                    if ( ImGui::InputScalar("slow ar thread", type, &slowar_t_num, &step) ) {
+                        slowar_t_num = std::clamp(slowar_t_num, 1u, n);
+                        value_changed = true;
+                        ctx.ini.sync();
+                    }
+                    if ( ImGui::InputScalar("fast ar thread", type, &fastar_t_num, &step) ) {
+                        fastar_t_num = std::clamp(fastar_t_num, 1u, n);
+                        value_changed = true;
+                        ctx.ini.sync();
+                    }
+
+                    if ( ImGui::InputScalar("encoder thread", type, &encoder_t_num, &step) ) {
+                        encoder_t_num = std::clamp(encoder_t_num, 1u, n);
+                        value_changed = true;
+                        ctx.ini.sync();
+                    }
+
+                    if ( ImGui::InputScalar("decoder thread", type, &decoder_t_num, &step) ) {
+                        decoder_t_num = std::clamp(decoder_t_num, 1u, n);
+                        value_changed = true;
+                        ctx.ini.sync();
+                    }
+                    if (value_changed) {
+                        imgui_scoped::StyleVar var(ImGuiStyleVar_FrameRounding, 8);
+                        if ( ImGui::Button("apply", ImVec2(-1.0f, 0.0f)) ) {
+                            value_changed = false;
+                            ctx.engine->cancel();
+                            ctx.engine = std::make_unique<Audio8Engine>(ctx.ini.get().runtime_config);
+                            ctx.is_initialized = false;
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
+                
+                ImGui::EndMenu();
+            }
+
+            // help, about
+            if (ImGui::BeginMenu("help")) 
+            {
+                static ImVec2 md_size = {900, 500};
+                ImGui::MarkdownConfig md_config{ 
+                    NULL, NULL, NULL, NULL, 
+                    { { io.FontDefault, true }, 
+                    { io.FontDefault, true }, 
+                    { io.FontDefault, false } }, 
+                    NULL };
+                if ( imgui_scoped::Child help = imgui_scoped::Child("help", md_size) ) {
+                    ImGui::Text("You can download model from:");
+                    {
+                        imgui_scoped::Indent indent;
+                        imgui_scoped::FontSize font_size(14.0f);
+                        ImGui::TextLinkOpenURL(model_url);
+                        ImGui::TextLinkOpenURL(backup_url);
+                    }
+
+                    ImGui::Markdown(help_text.c_str(), help_text.length(), md_config);
+                }
+                ImGui::EndMenu();
+            }
+
+            ImGui::EndMenuBar();
+        }
+    }
+}
+
+void render_progressbar( GuiContext& ctx ) {
+    // Progress bar
+    {
+        imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
+        imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 6.0f);
+
+        // "Loading" progress bar
+        if ( ctx.is_loading ) {
+            ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Loading..");
+        }
+
+        // "Encoding" progress bar
+        if ( ctx.is_encoding ) {
+            ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1.0f, 0.0f), "Encoding..");
+        }
+
+        // "Generating" "Total" progress bar
+        if( ctx.is_initialized && ctx.engine->is_busy() && ctx.session ){
+            ImGui::ProgressBar(ctx.generate_progress, ImVec2(-1.0f, 0.0f), "Generating..");
+            ImGui::ProgressBar(ctx.session->progress(), ImVec2(-1.0f, 0.0f), fmt::format("{}/{}", ctx.request_done.load(), ctx.session->request_count()).c_str());
+        }
+
+        {
+            bool open = ctx.is_segmenting || ctx.is_cancelling;
+            if( open ) {
+                if ( !ImGui::IsPopupOpen("my_spinner_popup") ) {
+                    ImGui::OpenPopup("my_spinner_popup");
+                }
+            }
+
+            const int popup_spinner_flag = ImGuiWindowFlags_NoDecoration 
+                    | ImGuiWindowFlags_NoMove 
+                    | ImGuiWindowFlags_NoBackground;
+
+            // Always at center
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImVec2 size = ImGui::GetMainViewport()->WorkSize;
+            ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            if (ImGui::BeginPopupModal("my_spinner_popup", &open, popup_spinner_flag)) {
+                
+                float r = (size.x > size.y ? size.x:size.y) * 0.5f * 0.1f;
+                if ( r < 10 ) { ImGui::CloseCurrentPopup(); }
+                auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];                        
+                ImSpinner::SpinnerRainbow("rainbow", r, 2.f, color, 8.f);
+                
+                ImGui::EndPopup();
+            }
+        }
+    }
+}
+
+void render_segmention_table( GuiContext& ctx ) {
+    // Text input + chunk info table
+    if( ctx.is_initialized  && ctx.session) {
+        std::string& origin_text = ctx.session->text();
+        int& segment_max_token = ctx.ini.get().segment_max_token;
+        static bool enable_edit_trigger = false;
+        static int last_segment_max_token = -1;
+        static int last_edit_count = -1;
+        static int edit_count = 0;
+        static bool btn_update_segmention = false;
+        bool disable_edit = ctx.engine->is_busy() || ctx.is_segmenting;
+
+        imgui_scoped::Disabled disable(disable_edit);
+        auto sz = ImGui::GetContentRegionAvail();
+        edit_count += ImGui::InputTextMultiline("##text to speach", &origin_text,
+            ImVec2(-FLT_MIN, sz.y * 0.25f), 
+            0);
+
+        bool should_update = (last_edit_count != edit_count);
+                should_update |= (last_segment_max_token != segment_max_token);
+                should_update &= !ctx.is_loading;
+                should_update &= !ctx.is_segmenting;
+                should_update &= enable_edit_trigger;
+                should_update |= btn_update_segmention;
+                
+        if( should_update ) {
+            btn_update_segmention = false;
+            ctx.is_segmenting = true;
+            last_edit_count = edit_count;
+            last_segment_max_token = segment_max_token;
+
+            ctx.split_text_status = std::async(std::launch::async, [&origin_text, &ctx, &segment_max_token](){
+                return ctx.engine->split_text_by_tokens(origin_text, segment_max_token);
+            });
+        }
+        
+        if( imgui_scoped::Child chunk_info = imgui_scoped::Child("##chunk info") ) {
+            ImGuiTableColumnFlags table_flags = 0//ImGuiTableFlags_Borders
+                            | ImGuiTableFlags_ScrollY
+                            | ImGuiTableFlags_RowBg;
+            ImGuiSelectableFlags select_flags = ImGuiSelectableFlags_SpanAllColumns 
+                            | ImGuiSelectableFlags_AllowDoubleClick
+                            | ImGuiSelectableFlags_AllowOverlap;
+            ImGuiTableColumnFlags column_flags = ImGuiTableColumnFlags_WidthFixed;
+
+            imgui_scoped::StyleVar f_padding(ImGuiStyleVar_FramePadding, {0.0f, 0.0f});
+            imgui_scoped::StyleVar s_txt_align(ImGuiStyleVar_SelectableTextAlign, {0.5f, 0.5f});
+
+            if(imgui_scoped::Table table = imgui_scoped::Table("##chunk table", 4, table_flags)){
+                float ax = ImGui::GetContentRegionAvail().x;
+                ImGui::TableSetupColumn("seq", column_flags, 0.04f * ax);
+                ImGui::TableSetupColumn("text", column_flags, 0.8f * ax );
+                ImGui::TableSetupColumn("status", column_flags, 0.06f * ax);
+                ImGui::TableSetupColumn("options", column_flags, 0.1f * ax);
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+
+                // column 0
+                ImGui::TableSetColumnIndex(0);
+                imgui_scoped::TableTextCentered("seq");
+
+                // column 1
+                ImGui::TableSetColumnIndex(1);
+                auto str = fmt::format("segment: [ {} token limit ]", segment_max_token);
+                if(ImGui::Selectable(str.c_str())) {
+                    ImGui::OpenPopup("my_segment_popup");
+                }
+
+                if (ImGui::BeginPopup("my_segment_popup")) {
+                    uint32_t step = 1;
+                    if (ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step)) {
+                        segment_max_token = std::max(5, segment_max_token);
+                        ctx.ini.sync();
+                    }
+                    
+                    ImGui::Checkbox("edit trigger segmention", &enable_edit_trigger);
+                    if ( ImGui::Button("update segmention", {-1,0}) ) {
+                        btn_update_segmention = true;
+                    }
+                    ImGui::EndPopup();
+                }
+
+                // column 2
+                ImGui::TableSetColumnIndex(2);
+                if(ImGui::Selectable("status")) {
+                    ImGui::OpenPopup("my_status_popup");
+                }
+
+                if (ImGui::BeginPopup("my_status_popup")) {
+                    if ( ImGui::MenuItem("done") ) {
+                        ctx.session->set_done_value(true);
+                    }
+                    if ( ImGui::MenuItem("todo") ) {
+                        ctx.session->set_done_value(false);
+                    }
+                    ImGui::EndPopup();
+                }
+
+                // column 3
+                ImGui::TableSetColumnIndex(3);
+                if(ImGui::Selectable("option")) {
+                    ImGui::OpenPopup("my_option_popup");
+                }
+
+                if (ImGui::BeginPopup("my_option_popup")) {
+                    for (const auto& voice : ctx.voices ) {
+                        if ( ImGui::MenuItem( voice.c_str(), NULL, ctx.default_voice == voice) ) {
+                            ctx.default_voice = voice;
+                            ctx.session->set_default_voice(ctx.default_voice);
+                            ctx.ini.sync();
+                        }
+                    }
+                    ImGui::EndPopup();
+                }
+
+                imgui_scoped::StyleVar s_var(ImGuiStyleVar_SelectableRounding, 12.0f);
+
+                ImGuiListClipper clipper;
+                clipper.Begin(ctx.session->configs().size());
+
+                static int last_playing_id = -1;
+                static int last_selected_seq = -1;
+                static int edit_select_id = -1;
+                size_t num = ctx.session->track_count();
+
+                bool is_shift_down = ImGui::IsKeyDown(ImGuiKey_LeftShift);
+                bool is_delete_down = ImGui::IsKeyDown(ImGuiKey_Delete);
+                if ( disable_edit ) {
+                    ctx.session->unselected_all();
+                }
+
+                while (clipper.Step()) {
+                    for (int seq = clipper.DisplayStart; seq < clipper.DisplayEnd; seq++) {
+                        auto& cfg = ctx.session->configs()[seq];
+                        bool generate_ongoing = ( cfg.id == ctx.generate_id );
+                            generate_ongoing &= ctx.engine->is_busy();
+                        bool decode_ongoing = ( cfg.id == ctx.decode_id );
+                            decode_ongoing &= ctx.engine->is_decoding();
+                        bool selected = generate_ongoing;
+                            selected |= ( cfg.selected );
+
+                        if ( generate_ongoing ) {
+                            ImGui::SetScrollHereY(0.5f);
+                        }
+
+                        imgui_scoped::ID id(seq);
+                        ImGui::TableNextRow();
+
+                        ImGui::TableSetColumnIndex(0); 
+                        if(ImGui::Selectable(std::to_string(cfg.id).c_str(), selected, select_flags)) {
+
+                            //toggle play
+                            if ( !ctx.session->is_playing_file() ) {
+
+                                if ( ctx.session->play_id(cfg.id) ) {
+                                    last_playing_id = cfg.id;
+                                }
+                            } else if(last_playing_id == cfg.id) {
+                                ctx.session->stop_file();
+                                last_playing_id = -1;
+                            } else {
+                                ctx.session->stop_file();
+                                if ( ctx.session->play_id(cfg.id) ) {
+                                    last_playing_id = cfg.id;
+                                }
+                            }
+
+                            if ( is_shift_down ) { // range select
+                                if( last_selected_seq >= 0 ) {
+                                    int start = std::min(last_selected_seq, (int)seq);
+                                    int end = std::max(last_selected_seq, (int)seq);
+
+                                    ctx.session->unselected_all();
+                                    for (size_t j = start; j <= end; j++) {
+                                        ctx.session->configs()[j].selected = true;
+                                    }
+                                }
+                            } else {
+                                last_selected_seq = seq;
+                                ctx.session->unselected_all();
+                                ctx.session->configs()[seq].selected = true;
+                            }
+                        }
+
+                        if (ImGui::IsItemFocused()) {
+                            if (ImGui::IsMouseDoubleClicked(0)) {
+                                edit_select_id = last_selected_seq;
+                            }
+                        }
+
+                        if ( edit_select_id != last_selected_seq ) {
+                            edit_select_id = -1;
+                        }
+
+                        ImGui::TableSetColumnIndex(1);
+                        if ( edit_select_id == cfg.id ) {
+                            ImGui::SetNextItemWidth(0.77f * ax);
+                            ImGui::InputText("##text", &cfg.text);
+                        } else {
+                            imgui_scoped::TableTextCentered(cfg.text.c_str());
+                        }
+
+                        ImGui::TableSetColumnIndex(2);
+
+                        if ( decode_ongoing || generate_ongoing ) {
+                            ImGui::SameLine();
+                            float r = ImGui::GetFrameHeight() * 0.5f;
+                            auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+                            float cell_width = ImGui::GetContentRegionAvail().x;
+                            float offset_x = cell_width* 0.5f - r;
+                            if (offset_x > 0.0f) {
+                                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
+                            }
+                            int arcs = decode_ongoing?2:1;
+                            
+                            ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
+                        } else if(  last_playing_id == cfg.id ) {
+                            ImGui::SameLine();
+                            float r = ImGui::GetFrameHeight() * 0.5f;
+                            auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+                            float cell_width = ImGui::GetContentRegionAvail().x;
+                            float offset_x = cell_width* 0.5f - r;
+                            if (offset_x > 0.0f) {
+                                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
+                            }
+                            ImSpinner::SpinnerBarChartRainbow("playing", r, 2.0f, color, 4.0f);
+
+                        } else {
+                            auto text = cfg.done?"done":"todo";
+                            if ( ImGui::Selectable(text) ) {
+                                ImGui::OpenPopup("my_done_popup");
+                            }
+
+                            if (ImGui::BeginPopup("my_done_popup")) {
+                                if ( ImGui::MenuItem("done") ) {
+                                    cfg.done = true;
+                                }
+                                if ( ImGui::MenuItem("todo") ) {
+                                    cfg.done = false;
+                                }
+                                ImGui::EndPopup();
+                            }
+                        }
+
+                        ImGui::TableSetColumnIndex(3);
+                        if ( ImGui::Selectable(cfg.voice.c_str()) ) {
+                            ImGui::OpenPopup("my_voices_popup");
+                        }
+
+                        if (ImGui::BeginPopup("my_voices_popup")) {
+                            for (int m = 0; m < ctx.voices.size(); m++) {
+                                imgui_scoped::ID id(m);
+                                if ( ImGui::MenuItem( ctx.voices[m].c_str(), NULL, cfg.voice == ctx.voices[m]) ) {
+                                    cfg.voice = ctx.voices[m];
+                                }
+                            }
+                            ImGui::EndPopup();
+                        }
+
+                    }
+                }
+
+                if ( is_delete_down ) {
+                    last_selected_seq = -1;
+                    ctx.session->delete_selected();
+                }
+                
+            }
+        }
+
+    }
+}
+void render_choose_model_popup( GuiContext& ctx ) {
+
+    imgui_scoped::StyleVar frame_padding(ImGuiStyleVar_FramePadding, {5.0f, 0.0f});
+    imgui_scoped::StyleVar frame_rounding(ImGuiStyleVar_FrameRounding, 4.0f);
+    imgui_scoped::StyleVar item_speacing(ImGuiStyleVar_ItemSpacing, {10.0f, 1.0f});
+    if (ImGui::BeginPopupModal("choose models path", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::TextColored(ImColor(200,0,0,255), 
+        "current models path: %s invalid.", ctx.paths.root.c_str());
+        
+        ImGui::SameLine();
+        if (ImGui::Button("choose")) {
+            std::string folder = choose_folder();
+            ctx.ini.get().model_folder = folder.empty() ? ctx.ini.get().model_folder : folder;
+            ctx.ini.sync();
+            ctx.paths = Audio8ModelPaths(ctx.ini.get().model_folder);
+            ImGui::CloseCurrentPopup();
+        }
+
+        {
+            imgui_scoped::FontSize font(12.0f);
+            ImGui::Text("%s", model_info);
+            ImGui::TextLinkOpenURL(model_url);
+            ImGui::Text("%s", model_folder);
+        }
+        ImGui::EndPopup();
+    }
+}
+
+void render_registration_popup( GuiContext& ctx ) {
+    if (ImGui::BeginPopupModal("registration", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        static std::string new_voice_name;
+        static std::string transcript;
+        static std::string ref_audio_path;
+        ImGui::InputText("voice name", &new_voice_name);
+        ImGui::InputText("transcript", &transcript);
+        ImGui::InputTextWithHint("##ref audio", "audio file path", &ref_audio_path);
+        ImGui::SameLine();
+        if (ImGui::Button("choose")) {
+            ref_audio_path = choose_audio_path();
+        }
+
+        if (ImGui::Button("OK", ImVec2(120, 0))) {
+
+            if ( new_voice_name.empty() ) {
+            } else if ( transcript.empty() ) {
+            } else if ( ref_audio_path.empty() ) {
+            } else if ( !std::filesystem::exists(ref_audio_path) ) {
+            } else {
+                ctx.registration_status = std::async(std::launch::async, [&](){
+                    ctx.engine->registers(new_voice_name, transcript, ref_audio_path);
+                });
+                    ImGui::CloseCurrentPopup();
+            }
+        }
+
+        ImGui::SetItemDefaultFocus();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
+}
+
+void render_main_window( GuiContext& ctx ) {
+
+    ImGui::Begin("main", NULL, ImGuiWindowFlags_MenuBar);
+    
+    render_menubar(ctx);
+
+    render_progressbar(ctx);
+
+    render_segmention_table(ctx);
+
+    // Check if the cancellation operation has completed
+    if ( ctx.cancle_status.valid() ) {
+        if ( ctx.cancle_status.wait_for(10ms) == std::future_status::ready ) {
+            ctx.cancle_status.get();
+            ctx.cancle_status = {};
+            ctx.session->request_count() = 0;
+            ctx.is_cancelling = false;
+        }
+    }
+
+    // Check if the text splitting operation has completed
+    if ( ctx.split_text_status.valid() ) {
+
+        if ( ctx.split_text_status.wait_for(10ms) == std::future_status::ready ) {
+            const auto& chunks = ctx.split_text_status.get();
+            if ( chunks.has_value() ) {
+
+                if ( !ctx.session ) { ctx.session = make_unique_nothrow<Session>(); }
+
+                ctx.session->configs().clear();
+                Session::config_item_s item;
+                for (int i = 0; i < chunks->size(); i++) {
+                    item.id = i;
+                    item.text = chunks.value()[i];
+                    item.voice = ctx.default_voice;
+                    item.selected = false;
+                    item.done = false;
+                    ctx.session->configs().push_back(item);
+                }
+            }
+            ctx.split_text_status = {};
+            ctx.is_segmenting = false;
+        }
+    }
+
+    // Check if the registration operation has completed
+    if ( ctx.registration_status.valid() ) {
+        ctx.is_encoding = true;
+
+        if ( std::future_status::ready == ctx.registration_status.wait_for(10ms) ) {
+            ctx.registration_status.get();
+            ctx.registration_status = {};
+            ctx.is_encoding = false;
+            ctx.voices = ctx.engine->list_voices();
+        }
+    }
+
     ImGui::End();
 }
 
