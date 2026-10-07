@@ -26,6 +26,7 @@ SOFTWARE.
 #include <string>
 #include <string_view>
 #include <cctype> 
+#include <fmt/core.h>
 
 #include <uni_algo/norm.h>
 #include <uni_algo/prop.h>
@@ -107,62 +108,34 @@ public:
         return "<|speaker:0|>" + cleaned;
     }
 
-    std::vector<std::string> split_into_sentences(const std::string& text) {
-
-        // source code must saved as UTF-8
-        std::vector<std::string> delimiters = {
-            "。", "？", "！", "；", "，", "\n", "!", "?", ";", ","
-        };
-        
+    std::vector<std::string> split_into_sentences(std::string_view text) {
         std::vector<std::string> sentences;
-        size_t start = 0;
-        size_t i = 0;
+        std::string sentence;
+        std::string cleaned;
+        int cut_count = 0;
+        int last_cut_count = 0;
 
-        while (i < text.length()) {
-            bool found_delim = false;
-            size_t delim_len = 0;
-            
-            for (const auto& delim : delimiters) {
-                if (text.compare(i, delim.length(), delim) == 0) {
-                    found_delim = true;
-                    delim_len = delim.length();
-                    break;
-                }
-            }
-
-            if (found_delim) {
-
-                i += delim_len;
+        for (char32_t cp : text | una::views::utf8) {
+            auto prop = una::codepoint::prop{cp};
                 
-                while (i < text.length()) {
-                    bool next_is_delim = false;
-                    for (const auto& d : delimiters) {
-                        if (text.compare(i, d.length(), d) == 0) {
-                            i += d.length();
-                            next_is_delim = true;
-                            break;
-                        }
-                    }
-                    if (!next_is_delim) {
-                        break;
+            if ( is_delimiters(cp) ) {
+                append_utf8(sentence, cp);
+                cleaned = clean_text(sentence);
+                if ( !is_pure_punctuation(cleaned) ) {
+                    sentences.push_back(cleaned);
+                }
+                
+                sentence.clear();
+                cut_count++;
+            } else if ( prop.General_Category_Pe() || prop.General_Category_Pf() ) {
+                if ( sentence.empty() ) {
+                    if ( last_cut_count != cut_count ) {
+                        last_cut_count = cut_count;
+                        append_utf8(sentences.back(), cp);
                     }
                 }
-
-                auto txt = clean_text(text.substr(start, i - start));
-                if ( !txt.empty() ) {
-                    sentences.push_back(txt);
-                }
-
-                start = i;
             } else {
-                i++;
-            }
-        }
-
-        if (start < text.length()) {
-            auto txt = clean_text(text.substr(start));
-            if ( !txt.empty() ) {
-                sentences.push_back(txt);
+                append_utf8(sentence, cp);
             }
         }
 
@@ -227,6 +200,26 @@ private:
             default:
                 return false;
         }
+    }
+
+    bool is_delimiters(char32_t c) {
+        switch (c) {
+            case U'。': case U'？': case U'！': case U'；': case U'，': case U'\n':
+            case U'!': case U'?': case U';': case U',':
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    bool is_pure_punctuation(std::string_view sentence) {
+        for (char32_t cp : sentence | una::views::utf8) {
+            auto prop = una::codepoint::prop{cp};
+            if ( !prop.General_Category_P() ) {
+                    return false; 
+            }
+        }
+        return true;
     }
 
     inline void append_utf8(std::string& out, char32_t cp) {
