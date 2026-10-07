@@ -226,6 +226,9 @@ public:
         std::string voice;
         bool selected;
         bool done;
+        size_t hash() const {
+            return std::hash<std::string>{}(text) ^ std::hash<std::string>{}(voice);
+        }
     };
     
 private:
@@ -234,7 +237,7 @@ private:
     size_t track_count_;
     size_t request_count_;
     std::vector<config_item_s> configs_;
-    std::string origin_text_ = "大家好，我是anthony。";
+    std::string origin_text_ = "";
     std::queue<int> done_;
     std::mutex done_mutex_;
     
@@ -247,7 +250,7 @@ public:
         if ( !std::filesystem::is_directory(cache_path) ) {
             std::filesystem::create_directories(cache_path);
         }
-        init_playlist();
+        rebuild_playlist();
     };
 
     ~Session() {
@@ -275,7 +278,7 @@ public:
             config.done = cfg["done"];
             session->configs().push_back(config);
         }
-        session->init_playlist();
+        session->rebuild_playlist();
         return session;
     }
 
@@ -295,23 +298,18 @@ public:
         return origin_text_;
     }
 
-    void init_playlist() {
+    void rebuild_playlist() {
         auto cache_path = root_ / cache_;
         if (!std::filesystem::is_directory(cache_path)) {
             return;
         }
 
         miniaudio_impl::track_clear();
-        std::vector<std::filesystem::path> paths;
-        for (const auto& entry : std::filesystem::directory_iterator(cache_path)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".wav") {
-                paths.push_back(entry.path());
+        for ( const auto& cfg  : configs_) {
+            auto wav_file = root_ / cache_ / fmt::format("{}.wav", cfg.hash());
+            if (std::filesystem::exists(wav_file)) {
+                miniaudio_impl::track_add(wav_file.string());
             }
-        }
-
-        std::sort(paths.begin(), paths.end());
-        for (const auto& p : paths) {
-            miniaudio_impl::track_add(p.string());
         }
     }
 
@@ -332,11 +330,15 @@ public:
         return miniaudio_impl::is_playing_list();
     }
 
-    bool play_id(int idx) {
+    bool play_id(size_t hash) {
         size_t count = track_count();
-        if ( count == 0 || idx < 0 ) return false;
+        if ( count == 0 ) return false;
 
-        auto wav_file = root_ / cache_ / fmt::format("{:05}.wav", idx);
+        auto wav_file = root_ / cache_ / fmt::format("{}.wav", hash);
+        if (!std::filesystem::exists(wav_file)) {
+            return false;
+        }
+
         miniaudio_impl::stop_file();
         return miniaudio_impl::play_file(wav_file.string().c_str());
     }
@@ -351,10 +353,14 @@ public:
 
     // save PCM data to a wav file
     void save_to_wav(const std::vector<float> &track, const int& id) {
-        auto wav_file = root_ / cache_ / fmt::format("{:05}.wav", id);
+        // find the configs_ item whose ID matches the given ID.
+        auto cfg = std::find_if(configs_.begin(), configs_.end(), [&id](const config_item_s& item){ return item.id == id; });
+        if ( cfg == configs_.end() ) return;
+
+        auto wav_file = root_ / cache_ / fmt::format("{}.wav", cfg->hash());
         miniaudio_impl::wav_write(track.data(), track.size(), wav_file.string().c_str());
         track_count_ = track_count();
-        miniaudio_impl::track_add(wav_file.string());
+        // miniaudio_impl::track_add(wav_file.string());
         std::lock_guard<std::mutex> guard(done_mutex_);
         done_.push(id);
     };
@@ -388,6 +394,7 @@ public:
 
         if ( id >= 0 ) {
             set_is_done(id);
+            rebuild_playlist();
         }
     }
 
@@ -458,24 +465,27 @@ public:
 
 class GuiContext {
 public:
-    UserSettings& ini;
+    UserSettings ini;
     std::unique_ptr<Audio8Engine> engine;
     std::unique_ptr<Session> session;
     Audio8ModelPaths paths;
     std::filesystem::path session_root_path;
-    std::string& default_voice;
     std::vector<std::string> voices;
 
     std::future<void> engine_status = {};
     std::future<void> registration_status = {};
     std::future<std::optional<std::vector<std::string>>> split_text_status = {};
     std::future<void> cancle_status = {};
+    std::future<std::unique_ptr<Session>> import_status = {};
+    std::future<void> export_status = {};
 
     bool is_initialized = false;
     bool is_loading = false;
     bool is_segmenting = false;
     bool is_encoding = false;
     bool is_cancelling = false;
+    bool is_importing = false;
+    bool is_exporting = false;
 
     float generate_progress = 0.0f;
     int generate_id = -1;
@@ -484,15 +494,21 @@ public:
     std::atomic<int> request_done = 0;
 
 public:
-    explicit GuiContext(UserSettings& settings) :
-     ini(settings),
-     engine(std::make_unique<Audio8Engine>(settings.get().runtime_config)),
-     session(nullptr),
-     paths{ settings.get().model_folder  },
-     session_root_path{ settings.get().session_folder },
-     default_voice(settings.get().default_voice) {};
+    GuiContext() {};
 
     ~GuiContext() = default;
+
+    void initialize() {
+        ini.initialize();
+        engine = std::make_unique<Audio8Engine>(ini.get().runtime_config);
+        session = nullptr;
+        paths = Audio8ModelPaths(ini.get().model_folder);
+        session_root_path = ini.get().session_folder;
+    }
+
+    bool is_busy() const {
+        return is_loading || is_segmenting || is_encoding || is_cancelling || is_importing || is_exporting;
+    }
 };
 
 std::string choose_folder();
@@ -525,17 +541,17 @@ void render_frame(GLFWwindow* window) {
         if( ctx->engine->initialize(ctx->paths.root) )// engine initialize
             ctx->is_initialized = true;
 
-        ctx->engine->set_generate_callback([&](float progress_in, int id_in){
+        ctx->engine->set_generate_callback([ctx](float progress_in, int id_in){
             ctx->generate_progress = progress_in;
             ctx->generate_id = id_in;
         });
 
-        ctx->engine->set_decoder_callback([&](std::vector<float> pcm_in, const int id_in){
+        ctx->engine->set_decoder_callback([ctx](std::vector<float> pcm_in, const int id_in){
             if( ctx->session ) ctx->session->save_to_wav(pcm_in, id_in);
             ctx->request_done.fetch_add(1);
         });
 
-        ctx->engine->set_decoder_eta_callback([&](float eta_in, const int id_in){
+        ctx->engine->set_decoder_eta_callback([ctx](float eta_in, const int id_in){
             ctx->decode_eta = eta_in;
             ctx->decode_id = id_in;
         });
@@ -543,9 +559,8 @@ void render_frame(GLFWwindow* window) {
         // auto preload
         if ( ctx->is_initialized ) {
             ctx->is_loading = true;
-            ctx->engine_status = std::async(std::launch::async,[&](){
+            ctx->engine_status = std::async(std::launch::async,[ctx](){
                 ctx->engine->preload_model();
-                ctx->is_loading = false;
             });
         }
     }
@@ -587,21 +602,18 @@ int main(int argc, char** argv)
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    
-    UserSettings settings;
-    settings.initialize();
-
-    GuiContext ctx{ settings };
+    GuiContext ctx;
+    ctx.initialize();
     
     glfwSetWindowUserPointer(main_window, &ctx);
-    glfwSetWindowSize(main_window, settings.get().window_width, settings.get().window_height);
+    glfwSetWindowSize(main_window, ctx.ini.get().window_width, ctx.ini.get().window_height);
 
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
     
-    ImGuiTheme::ApplyTweakedTheme(static_cast<ImGuiTheme::ImGuiTheme_>(settings.get().theme));
+    ImGuiTheme::ApplyTweakedTheme(static_cast<ImGuiTheme::ImGuiTheme_>(ctx.ini.get().theme));
 
-    std::string font_path = settings.get().font;
+    std::string font_path = ctx.ini.get().font;
     if ( std::filesystem::is_regular_file( font_path ) ) {
         ImGui::GetIO().FontDefault = io.Fonts->AddFontFromFileTTF(font_path.c_str());
     }
@@ -611,7 +623,7 @@ int main(int argc, char** argv)
 
     ImGuiStyle& style = ImGui::GetStyle();
     style.FontScaleDpi = std::max(xscale, yscale);
-    style.FontScaleMain = settings.get().font_scale_main;
+    style.FontScaleMain = ctx.ini.get().font_scale_main;
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(main_window, true);
@@ -622,7 +634,7 @@ int main(int argc, char** argv)
     });
 
     glfwSetFramebufferSizeCallback(main_window, [](GLFWwindow* window, int width, int height){
-        auto* ctx = static_cast<GuiContext*>(glfwGetWindowUserPointer(window));
+        auto ctx = static_cast<GuiContext*>(glfwGetWindowUserPointer(window));
         ctx->ini.get().window_width = width;
         ctx->ini.get().window_height = height;
         ctx->ini.sync();
@@ -631,7 +643,7 @@ int main(int argc, char** argv)
     });
 
     // Main loop
-    while ( glfwWindowShouldClose(main_window) == GL_FALSE )
+    while ( glfwWindowShouldClose(main_window) == GL_FALSE || ctx.is_busy() )
     {
         // Poll for and process events
         glfwPollEvents();
@@ -751,8 +763,13 @@ void render_menubar( GuiContext& ctx ) {
                             std::sort(recent_sessions.begin(), recent_sessions.end());
                             for (const auto& filename : recent_sessions) {
                                 if ( ImGui::MenuItem(filename.c_str(), nullptr, session_recent == filename) ) {
-                                    session_recent = filename;
-                                    ctx.session = Session::from_json((ctx.session_root_path / filename).string().c_str());
+                                    if ( !ctx.is_importing ) {
+                                        ctx.is_importing = true;
+                                        session_recent = filename;
+                                        ctx.import_status = std::async(std::launch::async, [&ctx, filename]() -> std::unique_ptr<Session> {
+                                            return Session::from_json((ctx.session_root_path / filename).string().c_str());
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -791,7 +808,13 @@ void render_menubar( GuiContext& ctx ) {
                                 if ( ctx.session->is_playing_list() ) {
                                     ctx.session->stop_playlist();
                                 }
-                                ctx.session->export_audio(export_length, ctx.ini.get().export_folder.c_str(), sample_rate);
+                                if ( !ctx.is_exporting ) {
+                                    ctx.is_exporting = true;
+                                    ctx.export_status = std::async(std::launch::async, [&ctx]() {
+                                        ctx.session->rebuild_playlist();
+                                        ctx.session->export_audio(ctx.ini.get().export_length, ctx.ini.get().export_folder.c_str(), ctx.ini.get().export_sample_rate);
+                                    });
+                                }
                             }
                             ImGui::EndMenu();
                         }
@@ -1015,7 +1038,7 @@ void render_progressbar( GuiContext& ctx ) {
         }
 
         {
-            bool open = ctx.is_segmenting || ctx.is_cancelling;
+            bool open = ctx.is_segmenting || ctx.is_cancelling || ctx.is_exporting || ctx.is_importing;
             if( open ) {
                 if ( !ImGui::IsPopupOpen("my_spinner_popup") ) {
                     ImGui::OpenPopup("my_spinner_popup");
@@ -1047,35 +1070,37 @@ void render_segmention_table( GuiContext& ctx ) {
     // Text input + chunk info table
     if( ctx.is_initialized  && ctx.session) {
         std::string& origin_text = ctx.session->text();
-        int& segment_max_token = ctx.ini.get().segment_max_token;
+        int& max_token = ctx.ini.get().segment_max_token;
         static bool enable_edit_trigger = false;
-        static int last_segment_max_token = -1;
+        static int last_max_token = -1;
         static int last_edit_count = -1;
         static int edit_count = 0;
-        static bool btn_update_segmention = false;
+        static bool btn_update_seg = false;
         bool disable_edit = ctx.engine->is_busy() || ctx.is_segmenting;
 
         imgui_scoped::Disabled disable(disable_edit);
-        auto sz = ImGui::GetContentRegionAvail();
-        edit_count += ImGui::InputTextMultiline("##text to speach", &origin_text,
-            ImVec2(-FLT_MIN, sz.y * 0.25f), 
-            0);
+        if ( ImGui::CollapsingHeader("text") ) {
+            auto sz = ImGui::GetContentRegionAvail();
+            edit_count += ImGui::InputTextMultiline("##text to speach", &origin_text,
+                ImVec2(-FLT_MIN, sz.y * 0.25f), 
+                0);
+        }
 
         bool should_update = (last_edit_count != edit_count);
-                should_update |= (last_segment_max_token != segment_max_token);
+                should_update |= (last_max_token != max_token);
                 should_update &= !ctx.is_loading;
                 should_update &= !ctx.is_segmenting;
                 should_update &= enable_edit_trigger;
-                should_update |= btn_update_segmention;
+                should_update |= btn_update_seg;
                 
         if( should_update ) {
-            btn_update_segmention = false;
+            btn_update_seg = false;
             ctx.is_segmenting = true;
             last_edit_count = edit_count;
-            last_segment_max_token = segment_max_token;
+            last_max_token = max_token;
 
-            ctx.split_text_status = std::async(std::launch::async, [&origin_text, &ctx, &segment_max_token](){
-                return ctx.engine->split_text_by_tokens(origin_text, segment_max_token);
+            ctx.split_text_status = std::async(std::launch::async, [&origin_text, &ctx, &max_token](){
+                return ctx.engine->split_text_by_tokens(origin_text, max_token);
             });
         }
         
@@ -1106,21 +1131,21 @@ void render_segmention_table( GuiContext& ctx ) {
 
                 // column 1
                 ImGui::TableSetColumnIndex(1);
-                auto str = fmt::format("segment: [ {} token limit ]", segment_max_token);
+                auto str = fmt::format("segment: [ {} token limit ]", max_token);
                 if(ImGui::Selectable(str.c_str())) {
                     ImGui::OpenPopup("my_segment_popup");
                 }
 
                 if (ImGui::BeginPopup("my_segment_popup")) {
                     uint32_t step = 1;
-                    if (ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &segment_max_token, &step)) {
-                        segment_max_token = std::max(5, segment_max_token);
+                    if (ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &max_token, &step)) {
+                        max_token = std::max(5, max_token);
                         ctx.ini.sync();
                     }
                     
                     ImGui::Checkbox("edit trigger segmention", &enable_edit_trigger);
                     if ( ImGui::Button("update segmention", {-1,0}) ) {
-                        btn_update_segmention = true;
+                        btn_update_seg = true;
                     }
                     ImGui::EndPopup();
                 }
@@ -1149,9 +1174,9 @@ void render_segmention_table( GuiContext& ctx ) {
 
                 if (ImGui::BeginPopup("my_option_popup")) {
                     for (const auto& voice : ctx.voices ) {
-                        if ( ImGui::MenuItem( voice.c_str(), NULL, ctx.default_voice == voice) ) {
-                            ctx.default_voice = voice;
-                            ctx.session->set_default_voice(ctx.default_voice);
+                        if ( ImGui::MenuItem( voice.c_str(), NULL, ctx.ini.get().default_voice == voice) ) {
+                            ctx.ini.get().default_voice = voice;
+                            ctx.session->set_default_voice(ctx.ini.get().default_voice);
                             ctx.ini.sync();
                         }
                     }
@@ -1163,10 +1188,10 @@ void render_segmention_table( GuiContext& ctx ) {
                 ImGuiListClipper clipper;
                 clipper.Begin(ctx.session->configs().size());
 
-                static int last_playing_id = -1;
+                static size_t last_playing_id = 0;
                 static int last_selected_seq = -1;
+                static int last_selected_id = -1;
                 static int edit_select_id = -1;
-                size_t num = ctx.session->track_count();
 
                 bool is_shift_down = ImGui::IsKeyDown(ImGuiKey_LeftShift);
                 bool is_delete_down = ImGui::IsKeyDown(ImGuiKey_Delete);
@@ -1197,16 +1222,16 @@ void render_segmention_table( GuiContext& ctx ) {
                             //toggle play
                             if ( !ctx.session->is_playing_file() ) {
 
-                                if ( ctx.session->play_id(cfg.id) ) {
-                                    last_playing_id = cfg.id;
+                                if ( ctx.session->play_id(cfg.hash()) ) {
+                                    last_playing_id = cfg.hash();
                                 }
-                            } else if(last_playing_id == cfg.id) {
+                            } else if(last_playing_id == cfg.hash()) {
                                 ctx.session->stop_file();
-                                last_playing_id = -1;
+                                last_playing_id = 0;
                             } else {
                                 ctx.session->stop_file();
-                                if ( ctx.session->play_id(cfg.id) ) {
-                                    last_playing_id = cfg.id;
+                                if ( ctx.session->play_id(cfg.hash()) ) {
+                                    last_playing_id = cfg.hash();
                                 }
                             }
 
@@ -1222,18 +1247,20 @@ void render_segmention_table( GuiContext& ctx ) {
                                 }
                             } else {
                                 last_selected_seq = seq;
+                                last_selected_id = cfg.id;
                                 ctx.session->unselected_all();
                                 ctx.session->configs()[seq].selected = true;
                             }
                         }
+                        ImGui::SetItemTooltip("Hash: %zu", cfg.hash());
 
                         if (ImGui::IsItemFocused()) {
                             if (ImGui::IsMouseDoubleClicked(0)) {
-                                edit_select_id = last_selected_seq;
+                                edit_select_id = last_selected_id;
                             }
                         }
 
-                        if ( edit_select_id != last_selected_seq ) {
+                        if ( edit_select_id != last_selected_id ) {
                             edit_select_id = -1;
                         }
 
@@ -1259,7 +1286,7 @@ void render_segmention_table( GuiContext& ctx ) {
                             int arcs = decode_ongoing?2:1;
                             
                             ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
-                        } else if(  last_playing_id == cfg.id ) {
+                        } else if(  ctx.session->is_playing_file() && last_playing_id == cfg.hash() ) {
                             ImGui::SameLine();
                             float r = ImGui::GetFrameHeight() * 0.5f;
                             auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
@@ -1389,6 +1416,32 @@ void render_main_window( GuiContext& ctx ) {
 
     render_segmention_table(ctx);
 
+    // Check if the engine status has changed
+    if ( ctx.engine_status.valid() ) {
+        if ( ctx.engine_status.wait_for(10ms) == std::future_status::ready ) {
+            ctx.engine_status.get();
+            ctx.engine_status = {};
+            ctx.is_loading = false;
+        }
+    }
+    // Check if the import operation has completed
+    if ( ctx.import_status.valid() ) {
+        if ( ctx.import_status.wait_for(10ms) == std::future_status::ready ) {
+            ctx.session = std::move(ctx.import_status.get());
+            ctx.import_status = {};
+            ctx.is_importing = false;
+        }
+    }
+
+    // Check if the export operation has completed
+    if ( ctx.export_status.valid() ) {
+        if ( ctx.export_status.wait_for(10ms) == std::future_status::ready ) {
+            ctx.export_status.get();
+            ctx.export_status = {};
+            ctx.is_exporting = false;
+        }
+    }
+
     // Check if the cancellation operation has completed
     if ( ctx.cancle_status.valid() ) {
         if ( ctx.cancle_status.wait_for(10ms) == std::future_status::ready ) {
@@ -1413,7 +1466,7 @@ void render_main_window( GuiContext& ctx ) {
                 for (int i = 0; i < chunks->size(); i++) {
                     item.id = i;
                     item.text = chunks.value()[i];
-                    item.voice = ctx.default_voice;
+                    item.voice = ctx.ini.get().default_voice;
                     item.selected = false;
                     item.done = false;
                     ctx.session->configs().push_back(item);
