@@ -110,7 +110,7 @@ private:
         std::string session_folder = "sessions";
         std::string export_folder = "sessions";
         std::string default_voice = "anthony";
-        std::string font = "fonts/NotoSansSC-Regular.ttf";
+        std::string font = "fonts/LXGWWenKai-Regular.ttf";
         std::string language = "en";
         float font_scale_main = 1.0f;
         int theme = 0;
