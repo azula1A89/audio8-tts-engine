@@ -27,6 +27,95 @@ SOFTWARE.
 
 #include <imgui.h>
 #include <utility>
+#include <unordered_map>
+#include <string>
+#include <fmt/ranges.h>
+
+class Localization {
+public:
+    static Localization& get() {
+        static Localization instance;
+        return instance;
+    }
+
+    void set_language(const std::string& lang) {
+        current_lang = lang;
+
+        if (lang == "zh") {
+            translations = {
+                    {"decoder thread", "解码线程"},
+                    {"fast ar thread", "快速AR线程"},
+                    {"font scale", "字体缩放"},
+                    {"theme", "主题"},
+                    {"encoder thread", "编码线程"},
+                    {"user interface", "用户界面"},
+                    {"cancel", "取消"},
+                    {"ok", "确定"},
+                    {"choose", "选择"},
+                    {"audio file path", "音频文件路径"},
+                    {"slow ar thread", "慢速AR线程"},
+                    {"voice name", "声音名称"},
+                    {"CPU", "CPU"},
+                    {"Generating..", "生成中..."},
+                    {"choose models path", "选择模型路径"},
+                    {"resume", "继续"},
+                    {"recent", "最近"},
+                    {"run", "运行"},
+                    {"export", "导出"},
+                    {"choose folder", "选择文件夹"},
+                    {"segment: [ {} token limit ]", "分段: [每段最多{}个词元]"},
+                    {"sample rate", "采样率"},
+                    {"settings", "设置"},
+                    {"GPU", "GPU"},
+                    {"model", "模型"},
+                    {"Loading..", "加载中..."},
+                    {"update segmentation", "更新分段"},
+                    {"max audio length(second)", "最大音频长度(秒)"},
+                    {"transcript", "转录文本"},
+                    {"session", "会话"},
+                    {"play", "播放"},
+                    {"registration", "注册"},
+                    {"edit trigger segmention", "文本改变触发分段"},
+                    {"done", "已完成"},
+                    {"todo", "待处理"},
+                    {"voices", "音色"},
+                    {"seq", "序号"},
+                    {"update segmention", "更新分段"},
+                    {"status", "状态"},
+                    {"new", "新建"},
+                    {"text", "文本"},
+                    {"You can download model from:", "你可以从这里下载模型文件:"},
+                    {"export to folder", "导出到目录"},
+                    {"help", "帮助"},
+                    {"language", "语言"},
+                    {"stop", "停止"}
+            };
+        } else {
+            translations.clear();
+        }
+    }
+
+    const char* tr(const char* key) {
+        auto it = translations.find(key);
+        translations[key] = (it != translations.end()) ? it->second.c_str() : key;
+        return translations[key].c_str();
+    }
+
+    std::unordered_map<std::string, std::string> language_list() const {
+       return {
+            {"en", "English"},
+            {"zh", "中文"},
+            {"ja", "日本語"},
+            {"ko", "한국어"}
+        };
+    }
+
+private:
+    std::string current_lang = "en";
+    std::unordered_map<std::string, std::string> translations;
+};
+
+#define TR(key) Localization::get().tr(key)
 
 namespace imgui_scoped {
 
