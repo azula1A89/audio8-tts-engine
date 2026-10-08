@@ -139,6 +139,14 @@ public:
             }
         }
 
+        // last sentence if any.
+        if ( !sentence.empty() ) {
+            cleaned = clean_text(sentence);
+            if ( !is_pure_punctuation(cleaned) ) {
+                sentences.push_back(cleaned);
+            }
+        }
+
         return sentences;
     }
 
