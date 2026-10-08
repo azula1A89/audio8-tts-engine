@@ -406,16 +406,27 @@ public:
     }
 
     void set_done_value(bool v) {
-        for (auto& i : configs_) { i.done = v; }
+        for (auto& i : configs_) { i.done = i.selected ? v : i.done; }
     }
 
     void set_default_voice (const std::string& default_voice){ 
         for (auto& i : configs_) { i.voice = default_voice; }
     };
 
+    void selected_all() {
+        for (auto& i : configs_) { i.selected = true; }
+    };
+
     void unselected_all() { 
         for (auto& i : configs_) { i.selected = false; }
     };
+
+    void toggle_selected(int id) {
+        auto search = std::find_if(configs_.begin(), configs_.end(), [&id](const config_item_s& item){ return item.id == id; });
+        if ( search != configs_.end() ) {
+            search->selected = !search->selected;
+        }
+    }
 
     void delete_selected() {
         std::erase_if(configs_, [](const auto& item){ return item.selected; });
@@ -1193,8 +1204,13 @@ void render_segmention_table( GuiContext& ctx ) {
                 static int last_selected_id = -1;
                 static int edit_select_id = -1;
 
+                bool is_ctrl_a_down = ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_A);
+                bool is_ctrl_down = ImGui::IsKeyDown(ImGuiKey_LeftCtrl);
                 bool is_shift_down = ImGui::IsKeyDown(ImGuiKey_LeftShift);
                 bool is_delete_down = ImGui::IsKeyDown(ImGuiKey_Delete);
+                bool is_enter_down = ImGui::IsKeyDown(ImGuiKey_Enter) || ImGui::IsKeyDown(ImGuiKey_KeypadEnter);
+                bool is_escape_down = ImGui::IsKeyDown(ImGuiKey_Escape);
+
                 if ( disable_edit ) {
                     ctx.session->unselected_all();
                 }
@@ -1245,6 +1261,8 @@ void render_segmention_table( GuiContext& ctx ) {
                                         ctx.session->configs()[j].selected = true;
                                     }
                                 }
+                            } else if ( is_ctrl_down ) {// multiple select
+                                ctx.session->toggle_selected(cfg.id);
                             } else {
                                 last_selected_seq = seq;
                                 last_selected_id = cfg.id;
@@ -1266,6 +1284,9 @@ void render_segmention_table( GuiContext& ctx ) {
 
                         ImGui::TableSetColumnIndex(1);
                         if ( edit_select_id == cfg.id ) {
+                            if ( is_enter_down || is_escape_down ) {
+                                edit_select_id = -1;
+                            }
                             ImGui::SetNextItemWidth(0.77f * ax);
                             ImGui::InputText("##text", &cfg.text);
                         } else {
@@ -1330,6 +1351,9 @@ void render_segmention_table( GuiContext& ctx ) {
                         }
 
                     }
+                }
+                if ( is_ctrl_a_down ) {
+                    ctx.session->selected_all();
                 }
 
                 if ( is_delete_down ) {
