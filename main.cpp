@@ -1199,10 +1199,9 @@ void render_segmention_table( GuiContext& ctx ) {
                 ImGuiListClipper clipper;
                 clipper.Begin(ctx.session->configs().size());
 
-                static size_t last_playing_id = 0;
+                static size_t last_playing_hash = 0;
                 static int last_selected_seq = -1;
-                static int last_selected_id = -1;
-                static int edit_select_id = -1;
+                static int edit_select_seq = -1;
 
                 bool is_ctrl_a_down = ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_A);
                 bool is_ctrl_down = ImGui::IsKeyDown(ImGuiKey_LeftCtrl);
@@ -1239,15 +1238,15 @@ void render_segmention_table( GuiContext& ctx ) {
                             if ( !ctx.session->is_playing_file() ) {
 
                                 if ( ctx.session->play_id(cfg.hash()) ) {
-                                    last_playing_id = cfg.hash();
+                                    last_playing_hash = cfg.hash();
                                 }
-                            } else if(last_playing_id == cfg.hash()) {
+                            } else if(last_playing_hash == cfg.hash()) {
                                 ctx.session->stop_file();
-                                last_playing_id = 0;
+                                last_playing_hash = 0;
                             } else {
                                 ctx.session->stop_file();
                                 if ( ctx.session->play_id(cfg.hash()) ) {
-                                    last_playing_id = cfg.hash();
+                                    last_playing_hash = cfg.hash();
                                 }
                             }
 
@@ -1265,7 +1264,6 @@ void render_segmention_table( GuiContext& ctx ) {
                                 ctx.session->toggle_selected(cfg.id);
                             } else {
                                 last_selected_seq = seq;
-                                last_selected_id = cfg.id;
                                 ctx.session->unselected_all();
                                 ctx.session->configs()[seq].selected = true;
                             }
@@ -1274,18 +1272,18 @@ void render_segmention_table( GuiContext& ctx ) {
 
                         if (ImGui::IsItemFocused()) {
                             if (ImGui::IsMouseDoubleClicked(0)) {
-                                edit_select_id = last_selected_id;
+                                edit_select_seq = last_selected_seq;
                             }
                         }
 
-                        if ( edit_select_id != last_selected_id ) {
-                            edit_select_id = -1;
+                        if ( edit_select_seq != last_selected_seq ) {
+                            edit_select_seq = -1;
                         }
 
                         ImGui::TableSetColumnIndex(1);
-                        if ( edit_select_id == cfg.id ) {
+                        if ( edit_select_seq == seq ) {
                             if ( is_enter_down || is_escape_down ) {
-                                edit_select_id = -1;
+                                edit_select_seq = -1;
                             }
                             ImGui::SetNextItemWidth(0.77f * ax);
                             ImGui::InputText("##text", &cfg.text);
@@ -1307,7 +1305,7 @@ void render_segmention_table( GuiContext& ctx ) {
                             int arcs = decode_ongoing?2:1;
                             
                             ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
-                        } else if(  ctx.session->is_playing_file() && last_playing_id == cfg.hash() ) {
+                        } else if(  ctx.session->is_playing_file() && last_playing_hash == cfg.hash() ) {
                             ImGui::SameLine();
                             float r = ImGui::GetFrameHeight() * 0.5f;
                             auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
