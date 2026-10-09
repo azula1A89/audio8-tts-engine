@@ -928,29 +928,32 @@ void render_menubar( GuiContext& ctx ) {
                         value_changed = true;
                         ctx.ini.sync();
                     }
+                    {
+                        imgui_scoped::Disabled disable(( ep == ExecutionProvider::GPU ));
+                        if ( ImGui::InputScalar(TR("slow ar thread"), type, &slowar_t_num, &step) ) {
+                            slowar_t_num = std::clamp(slowar_t_num, 1u, n);
+                            value_changed = true;
+                            ctx.ini.sync();
+                        }
+                        if ( ImGui::InputScalar(TR("fast ar thread"), type, &fastar_t_num, &step) ) {
+                            fastar_t_num = std::clamp(fastar_t_num, 1u, n);
+                            value_changed = true;
+                            ctx.ini.sync();
+                        }
 
-                    if ( ImGui::InputScalar(TR("slow ar thread"), type, &slowar_t_num, &step) ) {
-                        slowar_t_num = std::clamp(slowar_t_num, 1u, n);
-                        value_changed = true;
-                        ctx.ini.sync();
-                    }
-                    if ( ImGui::InputScalar(TR("fast ar thread"), type, &fastar_t_num, &step) ) {
-                        fastar_t_num = std::clamp(fastar_t_num, 1u, n);
-                        value_changed = true;
-                        ctx.ini.sync();
+                        if ( ImGui::InputScalar(TR("encoder thread"), type, &encoder_t_num, &step) ) {
+                            encoder_t_num = std::clamp(encoder_t_num, 1u, n);
+                            value_changed = true;
+                            ctx.ini.sync();
+                        }
+
+                        if ( ImGui::InputScalar(TR("decoder thread"), type, &decoder_t_num, &step) ) {
+                            decoder_t_num = std::clamp(decoder_t_num, 1u, n);
+                            value_changed = true;
+                            ctx.ini.sync();
+                        }
                     }
 
-                    if ( ImGui::InputScalar(TR("encoder thread"), type, &encoder_t_num, &step) ) {
-                        encoder_t_num = std::clamp(encoder_t_num, 1u, n);
-                        value_changed = true;
-                        ctx.ini.sync();
-                    }
-
-                    if ( ImGui::InputScalar(TR("decoder thread"), type, &decoder_t_num, &step) ) {
-                        decoder_t_num = std::clamp(decoder_t_num, 1u, n);
-                        value_changed = true;
-                        ctx.ini.sync();
-                    }
                     if (value_changed) {
                         imgui_scoped::StyleVar var(ImGuiStyleVar_FrameRounding, 8);
                         if ( ImGui::Button(TR("apply"), ImVec2(-1.0f, 0.0f)) ) {
