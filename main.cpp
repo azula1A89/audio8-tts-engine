@@ -979,7 +979,7 @@ void render_menubar( GuiContext& ctx ) {
             // help, about
             if (ImGui::BeginMenu(TR("help"))) 
             {
-                static ImVec2 md_size = {900, 500};
+                static ImVec2 md_size = {1500, 500};
                 ImGui::MarkdownConfig md_config{ 
                     NULL, NULL, NULL, NULL, 
                     { { io.FontDefault, true }, 
@@ -987,14 +987,6 @@ void render_menubar( GuiContext& ctx ) {
                     { io.FontDefault, false } }, 
                     NULL };
                 if ( imgui_scoped::Child help = imgui_scoped::Child(TR("help"), md_size) ) {
-                    ImGui::Text("%s", TR("You can download model from:"));
-                    {
-                        imgui_scoped::Indent indent;
-                        imgui_scoped::FontSize font_size(14.0f);
-                        ImGui::TextLinkOpenURL(model_url);
-                        ImGui::TextLinkOpenURL(backup_url);
-                    }
-
                     ImGui::Markdown(TR("help_text"), std::string(TR("help_text")).length(), md_config);
                 }
                 ImGui::EndMenu();
@@ -1363,10 +1355,11 @@ void render_choose_model_popup( GuiContext& ctx ) {
         }
 
         {
-            imgui_scoped::FontSize font(12.0f);
-            ImGui::Text("%s", Localization::get().model_info());
+            ImGui::Text("%s", TR(Localization::get().model_info()));
             ImGui::TextLinkOpenURL(model_url);
             ImGui::TextLinkOpenURL(backup_url);
+            ImGui::Text("");
+            ImGui::Text("%s", TR(Localization::get().model_structure_info()));
             ImGui::Text("%s", Localization::get().model_folder_structure());
         }
         ImGui::EndPopup();

@@ -38,8 +38,7 @@ SOFTWARE.
 class Localization {
 const char* model_info_ = "This project using the following model:";
 const char* model_structure_info_ = "The expected model directory is:";
-const char* model_folder_structure_ = R"(
-models/
+const char* model_folder_structure_ = R"(models/
 ├── slow_ar_int4.onnx
 ├── slow_ar_int4.onnx.data
 │
