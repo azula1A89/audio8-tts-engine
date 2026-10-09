@@ -31,8 +31,6 @@ SOFTWARE.
 #include <ctime>
 #include <fstream>
 #include <future>
-#include <mutex>
-#include <queue>
 #include <stdio.h>
 #include <string>
 
@@ -202,8 +200,7 @@ private:
     size_t request_count_;
     std::vector<config_item_s> configs_;
     std::string origin_text_ = "";
-    std::queue<int> done_;
-    std::mutex done_mutex_;
+    std::atomic<int> done_id_ = -1;
     
 public:
     Session(std::filesystem::path root = "sessions", 
@@ -324,9 +321,7 @@ public:
         auto wav_file = root_ / cache_ / fmt::format("{}.wav", cfg->hash());
         miniaudio_impl::wav_write(track.data(), track.size(), wav_file.string().c_str());
         track_count_ = track_count();
-        // miniaudio_impl::track_add(wav_file.string());
-        std::lock_guard<std::mutex> guard(done_mutex_);
-        done_.push(id);
+        done_id_.store(id);
     };
     
     size_t track_count() {
@@ -347,17 +342,10 @@ public:
     void refresh_status() {
 
         // random done status update
-        int id = -1;
-        {
-            std::lock_guard<std::mutex> guard(done_mutex_);
-            if ( !done_.empty() ) {
-                id = done_.front();
-                done_.pop();
-            }
-        }
-
-        if ( id >= 0 ) {
-            set_is_done(id);
+        int done_id = done_id_.load();
+            done_id_.store(-1);
+        if (done_id >= 0 ) {
+            set_is_done(done_id);
             rebuild_playlist();
         }
     }
