@@ -267,6 +267,8 @@ public:
 
         miniaudio_impl::track_clear();
         for ( const auto& cfg  : configs_) {
+            if ( !cfg.done ) { continue; }
+            
             auto wav_file = root_ / cache_ / fmt::format("{}.wav", cfg.hash());
             if (std::filesystem::exists(wav_file)) {
                 miniaudio_impl::track_add(wav_file.string());
@@ -346,7 +348,6 @@ public:
             done_id_.store(-1);
         if (done_id >= 0 ) {
             set_is_done(done_id);
-            rebuild_playlist();
         }
     }
 
@@ -823,6 +824,7 @@ void render_menubar( GuiContext& ctx ) {
                     std::string status_txt = TR(ctx.session->is_playing_list() ? "stop":"play");
                     if ( ImGui::MenuItem(status_txt.c_str()) ) {
                         if( !ctx.session->is_playing_list() ) {
+                            ctx.session->rebuild_playlist();
                             ctx.session->start_playlist();
                         } else {
                             ctx.session->stop_playlist();
