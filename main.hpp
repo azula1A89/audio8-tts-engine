@@ -87,14 +87,15 @@ ___
         ifs.close();
 
         try {
-            std::optional<std::unordered_map<std::string, std::string>> ret = std::nullopt;
+            std::unordered_map<std::string, std::string> ret;
             for (const auto& i : j) {
                 language_list_[i["code"]] = i["name"];
                 if ( i["code"] == current_lang_ ) {
                     ret = i["translation"];
                 }
             }
-            return ret;
+            
+            if (!ret.empty()) { return ret; }
         } catch (const std::exception& e) {}
         return std::nullopt;
     }
