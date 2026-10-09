@@ -32,6 +32,100 @@ SOFTWARE.
 #include <fmt/ranges.h>
 
 class Localization {
+const char* model_info_ = "This project using the following model:";
+const char* model_structure_info_ = "The expected model directory is:";
+const char* model_folder_structure_ = R"(
+models/
+├── slow_ar_int4.onnx
+├── slow_ar_int4.onnx.data
+│
+├── fast_ar_int4.onnx
+├── fast_ar_int4.onnx.data
+│
+├── codec_decoder_fp16.onnx
+├── codec_decoder_fp16.onnx.data
+│
+├── runtime_manifest.json
+├── tokenizer/
+│   └── tokenizer.json
+│
+└── registration/
+    ├── codec_encoder_fp16.onnx
+    └── codec_encoder_fp16.onnx.data
+)";
+
+const std::string help_text_en_ = R"(
+tips:
+___
+  * step 1: start a new session or open an existing one.
+  * step 2: paste the text you want to convert to speech.
+  * step 3: click the table header "segment [20 token limit]" to adjust the segment length. then click "update segmention" to split the text into segments.
+  * step 4: optional, you can edit the text or voice settings for each segment as needed.
+  * step 5: click "run" to start the text-to-speech conversion process.
+  * step 6: once the conversion is complete, you can export the audio files for further use.
+___
+segment table:
+  * click the table header "segment [20 token limit]" to adjust the segment length.
+  * click "update segmention" to apply the changes.(this will override the whole segmention table)
+  * after updating the segment length, you can manually adjust individual segments if needed.
+  * you can also delete segments by selecting them and press the delete key.
+  * to select multiple segments, hold the left-shift key while clicking on the segments you want to select.
+)";
+
+const std::string help_text_zh_ = R"(
+提示：
+___
+  * 第一步：新建会话或打开现有会话。
+  * 第二步：粘贴你想要转换为语音的文本。
+  * 第三步：点击表头“分段: [每段最多25个词元]”调整分段长度，然后点击“更新分段”将文本拆分为多个段落。
+  * 第四步：可选，你可以根据需要编辑每个段落的文本或语音设置。
+  * 第五步：点击“运行”开始文本到语音的转换过程。
+  * 第六步：转换完成后，你可以导出音频文件以供进一步使用。
+___
+分段表：
+  * 点击表头“分段: [每段最多25个词元]”调整分段长度。
+  * 点击“更新分段”应用更改（这将覆盖整个分段表）。
+  * 更新分段长度后，你可以根据需要手动调整各个段落。
+  * 你还可以通过选择段落并按下删除键来删除段落。
+  * 要选择多个段落，请在点击要选择的段落时按住左Shift键。
+)";
+
+const std::string help_text_ja_ = R"(
+ヒント：
+___
+  * ステップ1：新しいセッションを開始するか、既存のセッションを開きます。
+  * ステップ2：音声に変換したいテキストを貼り付けます。
+  * ステップ3：ヘッダー「セグメント: [ 25 トークン制限 ]」をクリックしてセグメントの長さを調整し、「セグメンテーションを更新する」をクリックしてテキストを複数のセグメントに分割します。
+  * ステップ4：必要に応じて、各セグメントのテキストや音声設定を編集できます。
+  * ステップ5：「実行」をクリックして、テキストから音声への変換プロセスを開始します。
+  * ステップ6：変換が完了したら、音声ファイルをエクスポートして、さらに使用できます。
+___
+セグメントテーブル：
+  * ヘッダー「セグメント: [ 25 トークン制限 ]」をクリックしてセグメントの長さを調整します。
+  * 「セグメンテーションを更新する」をクリックして変更を適用します（これにより、セグメントテーブル全体が上書きされます）。
+  * セグメントの長さを更新した後、必要に応じて、個々のセグメントを手動で調整できます。
+  * セグメントを削除するには、セグメントを選択して削除キーを押します。
+  * 複数のセグメントを選択するには、選択したいセグメントをクリックしながら左Shiftキーを押し続けます。
+)";
+
+const std::string help_text_ko_ = R"(
+힌트:
+___
+  * 1단계: 새 세션을 시작하거나 기존 세션을 엽니다.
+  * 2단계: 음성으로 변환하려는 텍스트를 붙여넣습니다.
+  * 3단계: 헤더 "세그먼트: [ 25 토큰 제한 ]"를 클릭하여 세그먼트 길이를 조정한 다음 "세그먼트 업데이트"을 클릭하여 텍스트를 여러 세그먼트로 분할합니다.
+  * 4단계: 필요에 따라 각 세그먼트의 텍스트 또는 음성 설정을 편집할 수 있습니다.
+  * 5단계: "실행"을 클릭하여 텍스트에서 음성으로 변환 프로세스를 시작합니다.
+  * 6단계: 변환이 완료되면 오디오 파일을 내보내어 추가로 사용할 수 있습니다.
+___
+세그먼트 테이블:
+  * 헤더 "세그먼트: [ 25 토큰 제한 ]"를 클릭하여 세그먼트 길이를 조정합니다.
+  * "세그먼트 업데이트"을 클릭하여 변경 사항을 적용합니다(이렇게 하면 세그먼트 테이블 전체가 덮어쓰여집니다).
+  * 세그먼트 길이를 업데이트한 후 필요에 따라 개별 세그먼트를 수동으로 조정할 수 있습니다.
+  * 세그먼트를 삭제하려면 세그먼트를 선택하고 삭제 키를 누릅니다.
+  * 여러 세그먼트를 선택하려면 선택하려는 세그먼트를 클릭하면서 왼쪽 Shift 키를 누르고 있습니다.
+)";
+
 public:
     static Localization& get() {
         static Localization instance;
@@ -39,10 +133,10 @@ public:
     }
 
     void set_language(const std::string& lang) {
-        current_lang = lang;
+        current_lang_ = lang;
 
         if (lang == "zh") {
-            translations = {
+            translations_ = {
                     {"decoder thread", "解码线程"},
                     {"fast ar thread", "快速AR线程"},
                     {"font scale", "字体缩放"},
@@ -85,13 +179,15 @@ public:
                     {"new", "新建"},
                     {"text", "文本"},
                     {"You can download model from:", "你可以从这里下载模型文件:"},
+                    {"The expected model directory is:", "期望的模型目录结构为:"},
                     {"export to folder", "导出到目录"},
                     {"help", "帮助"},
                     {"language", "语言"},
-                    {"stop", "停止"}
+                    {"stop", "停止"},
+                    {"help_text", help_text_zh_}
             };
         } else if (lang == "ja") {
-            translations = {
+            translations_ = {
                     {"decoder thread", "デコーダースレッド"},
                     {"fast ar thread", "高速ARスレッド"},
                     {"font scale", "フォントスケール"},
@@ -134,13 +230,15 @@ public:
                     {"new", "新規"},
                     {"text", "テキスト"},
                     {"You can download model from:", "モデルをダウンロードできます:"},
+                    {"The expected model directory is:", "期待されるモデルディレクトリは:"},
                     {"export to folder", "フォルダにエクスポート"},
                     {"help", "ヘルプ"},
                     {"language", "言語"},
-                    {"stop", "停止"}
+                    {"stop", "停止"},
+                    {"help_text", help_text_ja_}
             };
         } else if (lang == "ko") {
-            translations = {
+            translations_ = {
                     {"decoder thread", "디코더 스레드"},
                     {"fast ar thread", "빠른 AR 스레드"},
                     {"font scale", "글꼴 크기"},
@@ -183,21 +281,22 @@ public:
                     {"new", "새로 만들기"},
                     {"text", "텍스트"},
                     {"You can download model from:", "모델을 다운로드할 수 있습니다:"},
+                    {"The expected model directory is:", "예상되는 모델 디렉토리는:"},
                     {"export to folder", "폴더로 내보내기"},
                     {"help", "도움말"},
                     {"language", "언어"},
-                    {"stop", "중지"}
+                    {"stop", "중지"},
+                    {"help_text", help_text_ko_}
             };
 
         } else {
-            translations.clear();
+            translations_.clear();
         }
     }
 
     const char* tr(const char* key) {
-        auto it = translations.find(key);
-        translations[key] = (it != translations.end()) ? it->second.c_str() : key;
-        return translations[key].c_str();
+        auto it = translations_.find(key);
+        return (it != translations_.end()) ? it->second.c_str() : key;
     }
 
     std::unordered_map<std::string, std::string> language_list() const {
@@ -209,9 +308,21 @@ public:
         };
     }
 
+    const char* model_folder_structure() {
+        return model_folder_structure_;
+    }
+
+    const char* model_info() {
+        return model_info_;
+    }
+
+    const char* model_structure_info() {
+        return model_structure_info_;
+    }
+
 private:
-    std::string current_lang = "en";
-    std::unordered_map<std::string, std::string> translations;
+    std::string current_lang_ = "en";
+    std::unordered_map<std::string, std::string> translations_;
 };
 
 #define TR(key) Localization::get().tr(key)

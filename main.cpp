@@ -60,48 +60,9 @@ SOFTWARE.
 
 using namespace std::chrono_literals;
 using json = nlohmann::json;
-const char* model_info = "This project using the following model:";
+
 const char* model_url = "https://huggingface.co/Edge0/Audio8-TTS-Preview-0.6B-ONNX-INT4/tree/main";
 const char* backup_url = "https://modelscope.ai/models/Edge0/Audio8-TTS-Preview-0.6B-ONNX-INT4/files";
-const char* model_folder = R"(
-The expected model directory is:
-
-models/
-├── slow_ar_int4.onnx
-├── slow_ar_int4.onnx.data
-│
-├── fast_ar_int4.onnx
-├── fast_ar_int4.onnx.data
-│
-├── codec_decoder_fp16.onnx
-├── codec_decoder_fp16.onnx.data
-│
-├── runtime_manifest.json
-├── tokenizer/
-│   └── tokenizer.json
-│
-└── registration/
-    ├── codec_encoder_fp16.onnx
-    └── codec_encoder_fp16.onnx.data
-)";
-
-const std::string help_text = R"(
-tips:
-___
-  * step 1: start a new session or open an existing one.
-  * step 2: paste the text you want to convert to speech.
-  * step 3: click the table header "segment [20 token limit]" to adjust the segment length. then click "update segmention" to split the text into segments.
-  * step 4: optional, you can edit the text or voice settings for each segment as needed.
-  * step 5: click "run" to start the text-to-speech conversion process.
-  * step 6: once the conversion is complete, you can export the audio files for further use.
-___
-segment table:
-  * click the table header "segment [20 token limit]" to adjust the segment length.
-  * click "update segmention" to apply the changes.(this will override the whole segmention table)
-  * after updating the segment length, you can manually adjust individual segments if needed.
-  * you can also delete segments by selecting them and press the delete key.
-  * to select multiple segments, hold the left-shift key while clicking on the segments you want to select.
-)";
 
 class UserSettings {
 private:
@@ -1034,7 +995,7 @@ void render_menubar( GuiContext& ctx ) {
                         ImGui::TextLinkOpenURL(backup_url);
                     }
 
-                    ImGui::Markdown(help_text.c_str(), help_text.length(), md_config);
+                    ImGui::Markdown(TR("help_text"), std::string(TR("help_text")).length(), md_config);
                 }
                 ImGui::EndMenu();
             }
@@ -1403,9 +1364,10 @@ void render_choose_model_popup( GuiContext& ctx ) {
 
         {
             imgui_scoped::FontSize font(12.0f);
-            ImGui::Text("%s", model_info);
+            ImGui::Text("%s", Localization::get().model_info());
             ImGui::TextLinkOpenURL(model_url);
-            ImGui::Text("%s", model_folder);
+            ImGui::TextLinkOpenURL(backup_url);
+            ImGui::Text("%s", Localization::get().model_folder_structure());
         }
         ImGui::EndPopup();
     }
