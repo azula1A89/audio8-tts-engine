@@ -293,15 +293,8 @@ public:
     }
 
     bool play_id(size_t hash) {
-        size_t count = track_count();
-        if ( count == 0 ) return false;
-
-        auto wav_file = root_ / cache_ / fmt::format("{}.wav", hash);
-        if (!std::filesystem::exists(wav_file)) {
-            return false;
-        }
-
         miniaudio_impl::stop_file();
+        auto wav_file = root_ / cache_ / fmt::format("{}.wav", hash);
         return miniaudio_impl::play_file(wav_file.string().c_str());
     }
 
