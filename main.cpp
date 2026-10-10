@@ -1092,11 +1092,26 @@ void render_segmention_table( GuiContext& ctx ) {
             imgui_scoped::StyleVar s_txt_align(ImGuiStyleVar_SelectableTextAlign, {0.5f, 0.5f});
 
             if(imgui_scoped::Table table = imgui_scoped::Table("##chunk table", 4, table_flags)){
+                const float padding = ImGui::GetStyle().CellPadding.x;
+                float scrollbar_width = ImGui::GetStyle().ScrollbarSize;
                 float ax = ImGui::GetContentRegionAvail().x;
-                ImGui::TableSetupColumn(TR("seq"), column_flags, 0.04f * ax);
-                ImGui::TableSetupColumn(TR("text"), column_flags, 0.8f * ax );
-                ImGui::TableSetupColumn(TR("status"), column_flags, 0.06f * ax);
-                ImGui::TableSetupColumn(TR("voices"), column_flags, 0.1f * ax);
+                float width_seq = ImGui::CalcTextSize(TR("seq")).x;
+                width_seq = std::max(width_seq, ImGui::CalcTextSize(std::to_string(ctx.session->configs().size()).c_str()).x);
+                width_seq += padding * 4.0f;
+                float width_statue = ImGui::CalcTextSize(TR("status")).x;
+                width_statue = std::max(width_statue, ImGui::CalcTextSize(TR("done")).x);
+                width_statue = std::max(width_statue, ImGui::CalcTextSize(TR("todo")).x);
+                width_statue += padding * 4.0f;
+                float width_voices = ImGui::CalcTextSize(TR("voices")).x;
+                for (const auto& voice : ctx.voices) {
+                    width_voices = std::max(width_voices, ImGui::CalcTextSize(voice.c_str()).x);
+                }
+                width_voices += padding * 4.0f;
+                float width_text = ax - width_seq - width_statue - width_voices - scrollbar_width;
+                ImGui::TableSetupColumn(TR("seq"), column_flags, width_seq);
+                ImGui::TableSetupColumn(TR("text"), column_flags, width_text);
+                ImGui::TableSetupColumn(TR("status"), column_flags, width_statue);
+                ImGui::TableSetupColumn(TR("voices"), column_flags, width_voices);
                 ImGui::TableSetupScrollFreeze(0, 1);
                 ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
 
@@ -1249,7 +1264,7 @@ void render_segmention_table( GuiContext& ctx ) {
                             if ( is_enter_down || is_escape_down ) {
                                 edit_select_seq = -1;
                             }
-                            ImGui::SetNextItemWidth(0.77f * ax);
+                            ImGui::SetNextItemWidth(width_text*0.95f);
                             ImGui::InputText("##text", &cfg.text);
                         } else {
                             imgui_scoped::TableTextCentered(cfg.text.c_str());
@@ -1372,8 +1387,8 @@ void render_registration_popup( GuiContext& ctx ) {
         if (ImGui::Button(TR("choose"))) {
             ref_audio_path = choose_audio_path();
         }
-
-        if (ImGui::Button(TR("ok"), ImVec2(120, 0))) {
+        float width_button = std::max(ImGui::CalcTextSize(TR("ok")).x, ImGui::CalcTextSize(TR("cancel")).x) + 20.0f;
+        if (ImGui::Button(TR("ok"), ImVec2(width_button, 0))) {
 
             if ( new_voice_name.empty() ) {
             } else if ( transcript.empty() ) {
@@ -1389,7 +1404,7 @@ void render_registration_popup( GuiContext& ctx ) {
 
         ImGui::SetItemDefaultFocus();
         ImGui::SameLine();
-        if (ImGui::Button(TR("cancel"), ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
+        if (ImGui::Button(TR("cancel"), ImVec2(width_button, 0))) { ImGui::CloseCurrentPopup(); }
         ImGui::EndPopup();
     }
 }
