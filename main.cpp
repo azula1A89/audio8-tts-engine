@@ -973,8 +973,15 @@ void render_menubar( GuiContext& ctx ) {
             if (ImGui::BeginMenu(TR("help"))) 
             {
                 static ImVec2 md_size = {1500, 500};
-                ImGui::MarkdownConfig md_config{ 
-                    NULL, NULL, NULL, NULL, 
+                ImGui::MarkdownConfig md_config{ [](ImGui::MarkdownLinkCallbackData data) {
+                    std::string url(data.link, data.linkLength);
+                        if ( !url.empty() ) {
+                        ImGuiContext* g = ImGui::GetCurrentContext();
+                        if (ImGui::GetPlatformIO().Platform_OpenInShellFn != NULL)
+                            ImGui::GetPlatformIO().Platform_OpenInShellFn(g, url.c_str());
+                        }
+                    }
+                    , NULL, NULL, NULL, 
                     { { io.FontDefault, true }, 
                     { io.FontDefault, true }, 
                     { io.FontDefault, false } }, 

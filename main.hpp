@@ -74,6 +74,10 @@ ___
   * after updating the segment length, you can manually adjust individual segments if needed.
   * you can also delete segments by selecting them and press the delete key.
   * to select multiple segments, hold the left-shift key while clicking on the segments you want to select.
+
+about:
+___
+[https://github.com/azula1A89/audio8-tts-engine](https://github.com/azula1A89/audio8-tts-engine/)
 )";
 
     std::optional<std::unordered_map<std::string, std::string>> from_json(const std::string& json_file) {
