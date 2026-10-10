@@ -1211,7 +1211,7 @@ void render_segmention_table( GuiContext& ctx ) {
                         ImGui::TableNextRow();
 
                         ImGui::TableSetColumnIndex(0); 
-                        if(ImGui::Selectable(std::to_string(cfg.id).c_str(), selected, select_flags)) {
+                        if(ImGui::Selectable(std::to_string(seq).c_str(), selected, select_flags)) {
 
                             //toggle play
                             if ( !ctx.session->is_playing_file() ) {
@@ -1264,7 +1264,7 @@ void render_segmention_table( GuiContext& ctx ) {
                             if ( is_enter_down || is_escape_down ) {
                                 edit_select_seq = -1;
                             }
-                            ImGui::SetNextItemWidth(width_text*0.95f);
+                            ImGui::SetNextItemWidth(width_text);
                             ImGui::InputText("##text", &cfg.text);
                         } else {
                             imgui_scoped::TableTextCentered(cfg.text.c_str());
