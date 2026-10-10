@@ -201,6 +201,7 @@ private:
     std::vector<config_item_s> configs_;
     std::string origin_text_ = "";
     std::atomic<int> done_id_ = -1;
+    size_t json_hash_ = 0;
     
 public:
     Session(std::filesystem::path root = "sessions", 
@@ -239,6 +240,7 @@ public:
             config.done = cfg["done"];
             session->configs().push_back(config);
         }
+        session->json_hash_ = std::hash<std::string>{}(j.dump(4));
         session->rebuild_playlist();
         return session;
     }
@@ -413,8 +415,9 @@ public:
             cfg["done"] = config.done;
             save["configs"].push_back(cfg);
         }
-
-        if (!save.empty()) {
+        
+        size_t hash = std::hash<std::string>{}(save.dump(4));
+        if (hash != json_hash_) {
             try{
                 auto json_file = root_ / fmt::format("{}.json", cache_);
                 std::ofstream ostrm(json_file, std::ios::binary);
