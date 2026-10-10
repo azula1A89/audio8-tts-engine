@@ -76,7 +76,6 @@ private:
         int export_length = 1200;
         int export_sample_rate = 44100;
         int segment_max_token = 25;
-        bool enable_automatic_segmentation_trigger = false;
         int window_width = 1500;
         int window_height = 610;
         RuntimeConfig runtime_config;
@@ -114,7 +113,6 @@ public:
             else if (key == "export_length") setting->export_length = std::stoi(value);
             else if (key == "export_sample_rate") setting->export_sample_rate = std::stoi(value);
             else if (key == "segment_max_token") setting->segment_max_token = std::stoi(value);
-            else if (key == "enable_automatic_segmentation_trigger") setting->enable_automatic_segmentation_trigger = std::stoi(value) != 0;
             else if (key == "window_width") setting->window_width = std::stoi(value);
             else if (key == "window_height") setting->window_height = std::stoi(value);
             else if (key == "slow_ar_thread_num") setting->runtime_config.slow_ar_thread_num = std::stoi(value);
@@ -144,7 +142,6 @@ public:
         buf->appendf("export_length=%d\n", setting->export_length);
         buf->appendf("export_sample_rate=%d\n", setting->export_sample_rate);
         buf->appendf("segment_max_token=%d\n", setting->segment_max_token);
-        buf->appendf("enable_automatic_segmentation_trigger=%d\n", setting->enable_automatic_segmentation_trigger);
         buf->appendf("window_width=%d\n", setting->window_width);
         buf->appendf("window_height=%d\n", setting->window_height);
         buf->appendf("slow_ar_thread_num=%d\n", setting->runtime_config.slow_ar_thread_num);
@@ -415,7 +412,7 @@ public:
             cfg["done"] = config.done;
             save["configs"].push_back(cfg);
         }
-        
+
         size_t hash = std::hash<std::string>{}(save.dump(4));
         if (hash != json_hash_) {
             try{
