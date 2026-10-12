@@ -71,6 +71,24 @@ endif()
 include(FetchContent)
 
 FetchContent_Declare(
+    miniz
+    URL https://github.com/richgel999/miniz/archive/refs/tags/3.1.2.tar.gz
+)
+FetchContent_MakeAvailable(miniz)
+
+FetchContent_Declare(
+    pugixml
+    URL https://github.com/zeux/pugixml/releases/download/v1.16/pugixml-1.16.tar.gz
+)
+FetchContent_MakeAvailable(pugixml)
+
+FetchContent_Declare(
+    libmobi
+    URL https://github.com/bfabiszewski/libmobi/archive/refs/tags/v0.12.tar.gz
+)
+FetchContent_MakeAvailable(libmobi)
+
+FetchContent_Declare(
     nfd
     URL https://github.com/btzy/nativefiledialog-extended/archive/refs/tags/v1.3.0.tar.gz
 )
@@ -243,8 +261,17 @@ endif()
 
 find_package(OpenGL REQUIRED)
 
+# MINIAUDIO IMPLEMENTATION
+add_library(miniaudio_impl STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/miniaudio_impl.cpp)
+target_include_directories(miniaudio_impl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(miniaudio_impl PRIVATE fmt::fmt miniaudio)
+
+# TEXT EXTRACTOR
+add_library(text_extractor STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/text_extractor.cpp)
+target_include_directories(text_extractor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(text_extractor PRIVATE fmt::fmt pugixml miniz libmobi)
+
 add_library(audio8 STATIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/miniaudio_impl.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/audio8_engine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/codec_decoder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/fast_ar_generator.cpp
@@ -256,7 +283,6 @@ add_library(audio8 STATIC
 )
 
 target_include_directories(audio8 PUBLIC
-	${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/audio8
 )
 
@@ -264,12 +290,14 @@ target_link_libraries(audio8
     PUBLIC 
         fmt::fmt
         json
+        miniaudio_impl
     PRIVATE 
-        miniaudio
         onnxruntime_imported
         tokenizers_cpp
         uni-algo::uni-algo
 )
+
+
 
 if(ONNXRUNTIME_CUDA)
 	target_link_libraries(audio8 PRIVATE CUDA::cudart)
@@ -292,11 +320,12 @@ if (WIN32)
     audio8
     imgui
     nfd
+    text_extractor
     winmm      # Windows Multimedia API (needed for audio)
     gdi32      # Graphics Device Interface (needed for OpenGL)
   )
 else()
-    target_link_libraries(${app_name} PRIVATE audio8 imgui nfd)
+    target_link_libraries(${app_name} PRIVATE audio8 imgui nfd miniz text_extractor)
 endif()
 
 if(MSVC)
