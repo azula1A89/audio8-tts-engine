@@ -993,7 +993,16 @@ void render_menubar( GuiContext& ctx ) {
                             ImGui::GetPlatformIO().Platform_OpenInShellFn(g, url.c_str());
                         }
                     }
-                    , NULL, NULL, NULL, 
+                    , []( ImGui::MarkdownTooltipCallbackData data_ ) {
+                        std::string link(data_.linkData.link, data_.linkData.linkLength);
+                        std::string str = fmt::format(fmt::runtime(TR("{} Open in browser:\n{}")), data_.linkIcon, link);
+                        if( data_.linkData.isImage ) {
+                            ImGui::SetTooltip( "%.s", link.c_str() );
+                        } else {
+                            ImGui::SetTooltip( "%s", str.c_str() );
+                        }
+                    }
+                    , NULL, "★", 
                     { { io.FontDefault, true }, 
                     { io.FontDefault, true }, 
                     { io.FontDefault, false } }, 
@@ -1144,9 +1153,10 @@ void render_segmention_table( GuiContext& ctx ) {
                 if(ImGui::Selectable(str.c_str())) {
                     ImGui::OpenPopup("my_segment_popup");
                 }
+                ImGui::SetItemTooltip("%s", TR("segment settings"));
 
                 if (ImGui::BeginPopup("my_segment_popup")) {
-                    if ( ImGui::Button(TR("load book from file"), {-1,0}) ) {
+                    if ( ImGui::Button(TR("load text from file"), {-1,0}) ) {
                         std::filesystem::path book = choose_ebook_path();
                         if ( !book.empty() ) {
                             if ( book.filename().extension().string() == ".epub" ) {
@@ -1165,6 +1175,7 @@ void render_segmention_table( GuiContext& ctx ) {
                             }
                         }
                     }
+                    ImGui::SetItemTooltip("%s", TR("supported format: \nepub,txt,fb2,pdf,mobi,pdb,prc,azw,azw3,azw4"));
 
                     uint32_t step = 1;
                     if (ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &max_token, &step)) {
