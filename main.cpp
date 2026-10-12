@@ -56,6 +56,8 @@ SOFTWARE.
 
 #include <audio8_engine.hpp>
 
+#include <text_extractor.hpp>
+
 using namespace std::chrono_literals;
 using json = nlohmann::json;
 
@@ -428,6 +430,7 @@ public:
     Audio8ModelPaths paths;
     std::filesystem::path session_root_path;
     std::vector<std::string> voices;
+    std::unique_ptr<TextExtractor> text_extractor;
 
     std::future<void> engine_status = {};
     std::future<void> registration_status = {};
@@ -462,6 +465,7 @@ public:
         session = nullptr;
         paths = Audio8ModelPaths(ini.get().model_folder);
         session_root_path = ini.get().session_folder;
+        text_extractor = std::make_unique<TextExtractor>();
     }
 
     bool is_busy() const {
@@ -472,6 +476,7 @@ public:
 std::string choose_folder();
 std::string choose_audio_path();
 std::string choose_font_path();
+std::string choose_ebook_path();
 void imgui_parent_window();
 void render_menubar( GuiContext& ctx );
 void render_progressbar( GuiContext& ctx );
@@ -653,6 +658,20 @@ std::string choose_font_path()
     NFD::UniquePath out_path;
     nfdfilteritem_t filter_item[1] = {
         {"TrueType Font", "ttf"}};
+    std::string default_path = std::filesystem::current_path().string();
+    nfdresult_t result = NFD::OpenDialog(out_path, filter_item, 1, default_path.c_str());
+    if (result == NFD_OKAY){
+        path = out_path.get();
+    }
+    return path;
+}
+
+std::string choose_ebook_path() {
+    std::string path="";
+    NFD::Guard nfd_guard;
+    NFD::UniquePath out_path;
+    nfdfilteritem_t filter_item[1] = {
+        {"E-Book", "epub,txt,fb2,pdf,mobi"}};
     std::string default_path = std::filesystem::current_path().string();
     nfdresult_t result = NFD::OpenDialog(out_path, filter_item, 1, default_path.c_str());
     if (result == NFD_OKAY){
@@ -1127,6 +1146,21 @@ void render_segmention_table( GuiContext& ctx ) {
                 }
 
                 if (ImGui::BeginPopup("my_segment_popup")) {
+                    if ( ImGui::Button(TR("load book from file"), {-1,0}) ) {
+                        std::filesystem::path book = choose_ebook_path();
+                        if ( !book.empty() ) {
+                            if ( book.filename().extension().string() == ".epub" ) {
+                                origin_text = ctx.text_extractor->from_epub(book);
+                            } else if ( book.filename().extension().string() == ".txt" ) {
+                                origin_text = ctx.text_extractor->from_text(book);
+                            } else if ( book.filename().extension().string() == ".fb2" ) {
+                                origin_text = ctx.text_extractor->from_fb2(book);
+                            } else if ( book.filename().extension().string() == ".mobi" ) {
+                                origin_text = ctx.text_extractor->from_mobi(book);
+                            }
+                        }               
+                    }
+
                     uint32_t step = 1;
                     if (ImGui::InputScalar("##segment_max_token", ImGuiDataType_U32, &max_token, &step)) {
                         max_token = std::max(5, max_token);

@@ -266,10 +266,17 @@ add_library(miniaudio_impl STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/miniaudio_impl
 target_include_directories(miniaudio_impl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(miniaudio_impl PRIVATE fmt::fmt miniaudio)
 
+# MOBI WRAPPER
+add_library(libmobi_wrapper STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/mobi_wrapper.cpp)
+target_include_directories(libmobi_wrapper PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include 
+    ${libmobi_SOURCE_DIR}/src/)
+target_link_libraries(libmobi_wrapper PRIVATE mobi pugixml)
+
 # TEXT EXTRACTOR
 add_library(text_extractor STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/text_extractor.cpp)
 target_include_directories(text_extractor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(text_extractor PRIVATE fmt::fmt pugixml miniz libmobi)
+target_link_libraries(text_extractor PRIVATE fmt::fmt pugixml miniz libmobi_wrapper)
 
 add_library(audio8 STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/audio8_engine.cpp
@@ -325,7 +332,7 @@ if (WIN32)
     gdi32      # Graphics Device Interface (needed for OpenGL)
   )
 else()
-    target_link_libraries(${app_name} PRIVATE audio8 imgui nfd miniz text_extractor)
+    target_link_libraries(${app_name} PRIVATE audio8 imgui nfd text_extractor)
 endif()
 
 if(MSVC)
