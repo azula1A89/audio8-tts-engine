@@ -93,26 +93,28 @@
 ├── main.hpp
 │
 ├── include/
-│   ├── audio8_engine.hpp
-│   ├── codec_decoder.hpp
-│   ├── fast_ar_generator.hpp
-│   ├── miniaudio_impl.hpp
-│   ├── prompt_builder.hpp
-│   ├── sampler.hpp
-│   ├── slow_ar_generator.hpp
-│   ├── text_processor.hpp
-│   └── voice_manager.hpp
+|   ├── miniaudio_impl.hpp
+|   └── audio8
+│        ├── audio8_engine.hpp
+│        ├── codec_decoder.hpp
+│        ├── fast_ar_generator.hpp
+│        ├── prompt_builder.hpp
+│        ├── sampler.hpp
+│        ├── slow_ar_generator.hpp
+│        ├── text_processor.hpp
+│        └── voice_manager.hpp
 │
 ├── src/
-│   ├── audio8_engine.cpp
-│   ├── codec_decoder.cpp
-│   ├── fast_ar_generator.cpp
-│   ├── miniaudio_impl.cpp
-│   ├── prompt_builder.cpp
-│   ├── sampler.cpp
-│   ├── slow_ar_generator.cpp
-│   ├── text_processor.cpp
-│   └── voice_manager.cpp
+|   ├── miniaudio_impl.cpp
+|   └── audio8
+│        ├── audio8_engine.cpp
+│        ├── codec_decoder.cpp
+│        ├── fast_ar_generator.cpp
+│        ├── prompt_builder.cpp
+│        ├── sampler.cpp
+│        ├── slow_ar_generator.cpp
+│        ├── text_processor.cpp
+│        └── voice_manager.cpp
 │
 ├── models/
 │   └── readme.txt
@@ -181,12 +183,12 @@ models/
 - 支持 C++20 的编译器
 - Git
 - 首次配置/构建时需要互联网连接，用于自动下载依赖
+- Rust
 
 当前 CMake 配置支持：
 
 - Windows x64
 - Linux x64
-- macOS ARM64（**未测试**）
 
 其他平台可能需要根据实际环境修改 ONNX Runtime 的配置。
 

@@ -94,26 +94,28 @@ For autoregressive inference, the implementation maintains KV caches in C++ and 
 ├── main.hpp
 │
 ├── include/
-│   ├── audio8_engine.hpp
-│   ├── codec_decoder.hpp
-│   ├── fast_ar_generator.hpp
-│   ├── miniaudio_impl.hpp
-│   ├── prompt_builder.hpp
-│   ├── sampler.hpp
-│   ├── slow_ar_generator.hpp
-│   ├── text_processor.hpp
-│   └── voice_manager.hpp
+|   ├── miniaudio_impl.hpp
+|   └── audio8
+│        ├── audio8_engine.hpp
+│        ├── codec_decoder.hpp
+│        ├── fast_ar_generator.hpp
+│        ├── prompt_builder.hpp
+│        ├── sampler.hpp
+│        ├── slow_ar_generator.hpp
+│        ├── text_processor.hpp
+│        └── voice_manager.hpp
 │
 ├── src/
-│   ├── audio8_engine.cpp
-│   ├── codec_decoder.cpp
-│   ├── fast_ar_generator.cpp
-│   ├── miniaudio_impl.cpp
-│   ├── prompt_builder.cpp
-│   ├── sampler.cpp
-│   ├── slow_ar_generator.cpp
-│   ├── text_processor.cpp
-│   └── voice_manager.cpp
+|   ├── miniaudio_impl.cpp
+|   └── audio8
+│        ├── audio8_engine.cpp
+│        ├── codec_decoder.cpp
+│        ├── fast_ar_generator.cpp
+│        ├── prompt_builder.cpp
+│        ├── sampler.cpp
+│        ├── slow_ar_generator.cpp
+│        ├── text_processor.cpp
+│        └── voice_manager.cpp
 │
 ├── models/
 │   └── readme.txt
@@ -182,11 +184,11 @@ The model files are not included in this repository. Download them from the mode
 - C++20 compatible compiler
 - Git
 - Internet access during the first CMake configuration/build, because dependencies are fetched automatically
+- Rust
 
 The current CMake configuration supports:
 
 - Windows x64
-- macOS ARM64 (Not tested)
 - Linux x64
 
 Other platforms may require changes to the ONNX Runtime package configuration.
