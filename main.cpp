@@ -1057,7 +1057,7 @@ void render_segmention_table( GuiContext& ctx ) {
         if ( ImGui::CollapsingHeader(TR("text")) ) {
             auto sz = ImGui::GetContentRegionAvail();
             edit_count += ImGui::InputTextMultiline("##text to speach", &origin_text,
-                ImVec2(-FLT_MIN, sz.y * 0.25f), 
+                ImVec2(-FLT_MIN, sz.y * 0.75f), 
                 0);
         }
 
