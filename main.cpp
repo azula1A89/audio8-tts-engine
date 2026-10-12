@@ -671,7 +671,7 @@ std::string choose_ebook_path() {
     NFD::Guard nfd_guard;
     NFD::UniquePath out_path;
     nfdfilteritem_t filter_item[1] = {
-        {"E-Book", "epub,txt,fb2,pdf,mobi"}};
+        {"E-Book", "epub,txt,fb2,pdf,mobi,pdb,prc,azw,azw3,azw4"}};
     std::string default_path = std::filesystem::current_path().string();
     nfdresult_t result = NFD::OpenDialog(out_path, filter_item, 1, default_path.c_str());
     if (result == NFD_OKAY){
@@ -1155,10 +1155,15 @@ void render_segmention_table( GuiContext& ctx ) {
                                 origin_text = ctx.text_extractor->from_text(book);
                             } else if ( book.filename().extension().string() == ".fb2" ) {
                                 origin_text = ctx.text_extractor->from_fb2(book);
-                            } else if ( book.filename().extension().string() == ".mobi" ) {
-                                origin_text = ctx.text_extractor->from_mobi(book);
+                            } else if ( book.filename().extension().string() == ".pdb" ||
+                                        book.filename().extension().string() == ".prc" ||
+                                        book.filename().extension().string() == ".mobi"||
+                                        book.filename().extension().string() == ".azw" ||
+                                        book.filename().extension().string() == ".azw3"||
+                                        book.filename().extension().string() == ".azw4" ) {
+                                    origin_text = ctx.text_extractor->from_mobi(book);
                             }
-                        }               
+                        }
                     }
 
                     uint32_t step = 1;
