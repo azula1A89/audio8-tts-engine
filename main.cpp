@@ -1077,9 +1077,15 @@ void render_segmention_table( GuiContext& ctx ) {
         static int last_edit_count = -1;
         static int edit_count = 0;
         static bool btn_update_seg = false;
+        static bool show_origin_text = false;
         bool disable_edit = ctx.engine->is_busy() || ctx.is_segmenting;
 
         imgui_scoped::Disabled disable(disable_edit);
+        
+        if (show_origin_text) {
+            show_origin_text = false;
+            ImGui::SetNextItemOpen(true);
+        }
         if ( ImGui::CollapsingHeader(TR("text")) ) {
             auto sz = ImGui::GetContentRegionAvail();
             edit_count += ImGui::InputTextMultiline("##text to speach", &origin_text,
@@ -1172,6 +1178,7 @@ void render_segmention_table( GuiContext& ctx ) {
                                             book.filename().extension().string() == ".azw4" ) {
                                         origin_text = ctx.text_extractor->from_mobi(book);
                                 }
+                                show_origin_text = true;
                             } catch (const std::exception& e) {
                                 fmt::print("unable to load {}. detail: {}", book.string(), e.what());
                             }
