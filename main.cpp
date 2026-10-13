@@ -53,9 +53,7 @@ SOFTWARE.
 #include <imspinner_text.h>
 
 #include <miniaudio_impl.hpp>
-
 #include <audio8_engine.hpp>
-
 #include <text_extractor.hpp>
 
 using namespace std::chrono_literals;
@@ -1159,19 +1157,23 @@ void render_segmention_table( GuiContext& ctx ) {
                     if ( ImGui::Button(TR("load text from file"), {-1,0}) ) {
                         std::filesystem::path book = choose_ebook_path();
                         if ( !book.empty() ) {
-                            if ( book.filename().extension().string() == ".epub" ) {
-                                origin_text = ctx.text_extractor->from_epub(book);
-                            } else if ( book.filename().extension().string() == ".txt" ) {
-                                origin_text = ctx.text_extractor->from_text(book);
-                            } else if ( book.filename().extension().string() == ".fb2" ) {
-                                origin_text = ctx.text_extractor->from_fb2(book);
-                            } else if ( book.filename().extension().string() == ".pdb" ||
-                                        book.filename().extension().string() == ".prc" ||
-                                        book.filename().extension().string() == ".mobi"||
-                                        book.filename().extension().string() == ".azw" ||
-                                        book.filename().extension().string() == ".azw3"||
-                                        book.filename().extension().string() == ".azw4" ) {
-                                    origin_text = ctx.text_extractor->from_mobi(book);
+                            try {
+                                if ( book.filename().extension().string() == ".epub" ) {
+                                    origin_text = ctx.text_extractor->from_epub(book);
+                                } else if ( book.filename().extension().string() == ".txt" ) {
+                                    origin_text = ctx.text_extractor->from_text(book);
+                                } else if ( book.filename().extension().string() == ".fb2" ) {
+                                    origin_text = ctx.text_extractor->from_fb2(book);
+                                } else if ( book.filename().extension().string() == ".pdb" ||
+                                            book.filename().extension().string() == ".prc" ||
+                                            book.filename().extension().string() == ".mobi"||
+                                            book.filename().extension().string() == ".azw" ||
+                                            book.filename().extension().string() == ".azw3"||
+                                            book.filename().extension().string() == ".azw4" ) {
+                                        origin_text = ctx.text_extractor->from_mobi(book);
+                                }
+                            } catch (const std::exception& e) {
+                                fmt::print("unable to load {}. detail: {}", book.string(), e.what());
                             }
                         }
                     }

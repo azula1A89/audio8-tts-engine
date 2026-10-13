@@ -18,6 +18,5 @@ public:
     std::string from_epub(const std::filesystem::path& file);
     std::string from_text(const std::filesystem::path& file);
     std::string from_fb2(const std::filesystem::path& file);
-    std::string from_pdf(const std::filesystem::path& file);
     std::string from_mobi(const std::filesystem::path& file);
 };

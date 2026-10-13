@@ -266,17 +266,22 @@ add_library(miniaudio_impl STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/miniaudio_impl
 target_include_directories(miniaudio_impl PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(miniaudio_impl PRIVATE fmt::fmt miniaudio)
 
+#pugixml WRAPPER
+add_library(libpugixml_wrapper STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/pugixml_wrapper.cpp)
+target_include_directories(libpugixml_wrapper PRIVATE  ${CMAKE_CURRENT_SOURCE_DIR}/include )
+target_link_libraries(libpugixml_wrapper PUBLIC pugixml)
+
 # MOBI WRAPPER
 add_library(libmobi_wrapper STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/mobi_wrapper.cpp)
 target_include_directories(libmobi_wrapper PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/include 
     ${libmobi_SOURCE_DIR}/src/)
-target_link_libraries(libmobi_wrapper PRIVATE mobi pugixml)
+target_link_libraries(libmobi_wrapper PRIVATE mobi libpugixml_wrapper)
 
 # TEXT EXTRACTOR
 add_library(text_extractor STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/text_extractor.cpp)
 target_include_directories(text_extractor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(text_extractor PRIVATE fmt::fmt pugixml miniz libmobi_wrapper)
+target_link_libraries(text_extractor PRIVATE libpugixml_wrapper miniz libmobi_wrapper)
 
 add_library(audio8 STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/audio8_engine.cpp
