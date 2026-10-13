@@ -478,7 +478,7 @@ std::string choose_ebook_path();
 void imgui_parent_window();
 void render_menubar( GuiContext& ctx );
 void render_progressbar( GuiContext& ctx );
-void render_segmention_table( GuiContext& ctx );
+void render_segmentation_table( GuiContext& ctx );
 void render_choose_model_popup( GuiContext& ctx );
 void render_registration_popup( GuiContext& ctx );
 void render_main_window( GuiContext& ctx );
@@ -1067,7 +1067,7 @@ void render_progressbar( GuiContext& ctx ) {
     }
 }
 
-void render_segmention_table( GuiContext& ctx ) {
+void render_segmentation_table( GuiContext& ctx ) {
     // Text input + chunk info table
     if( ctx.is_initialized  && ctx.session) {
         std::string& origin_text = ctx.session->text();
@@ -1192,8 +1192,8 @@ void render_segmention_table( GuiContext& ctx ) {
                         ctx.ini.sync();
                     }
                     
-                    ImGui::Checkbox(TR("edit trigger segmention"), &enable_edit_trigger);
-                    if ( ImGui::Button(TR("update segmention"), {-1,0}) ) {
+                    ImGui::Checkbox(TR("edit trigger segmentation"), &enable_edit_trigger);
+                    if ( ImGui::Button(TR("update segmentation"), {-1,0}) ) {
                         btn_update_seg = true;
                     }
                     ImGui::EndPopup();
@@ -1476,7 +1476,7 @@ void render_main_window( GuiContext& ctx ) {
 
     render_progressbar(ctx);
 
-    render_segmention_table(ctx);
+    render_segmentation_table(ctx);
 
     // Check if the engine status has changed
     if ( ctx.engine_status.valid() ) {

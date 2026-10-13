@@ -62,7 +62,7 @@ tips:
 ___
   * step 1: start a new session or open an existing one.
   * step 2: paste the text you want to convert to speech.
-  * step 3: click the table header "segment [20 token limit]" to adjust the segment length. then click "update segmention" to split the text into segments.
+  * step 3: click the table header "segment [20 token limit]" to adjust the segment length. then click "update segmentation" to split the text into segments.
   * step 4: optional, you can edit the text or voice settings for each segment as needed.
   * step 5: click "run" to start the text-to-speech conversion process.
   * step 6: once the conversion is complete, you can export the audio files for further use.
@@ -70,7 +70,7 @@ ___
 segment table:
 ___
   * click the table header "segment [20 token limit]" to adjust the segment length.
-  * click "update segmention" to apply the changes.(this will override the whole segmention table)
+  * click "update segmentation" to apply the changes.(this will override the whole segmentation table)
   * after updating the segment length, you can manually adjust individual segments if needed.
   * you can also delete segments by selecting them and press the delete key.
   * to select multiple segments, hold the left-shift key while clicking on the segments you want to select.
