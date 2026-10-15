@@ -542,7 +542,7 @@ void render_frame(GLFWwindow* window) {
         if ( ctx->is_initialized ) {
             ctx->is_loading = true;
             ctx->engine_status = std::async(std::launch::async,[ctx](){
-                // ctx->engine->preload_model();
+                ctx->engine->preload_model();
             });
         }
     }
