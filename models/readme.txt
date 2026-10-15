@@ -1,6 +1,10 @@
 This project using the following model:
 https://huggingface.co/Audio8/Audio8-TTS-Preview-0.6B-ONNX-INT4
 
+download:
+sudo apt-get -y install git-lfs
+./hfd.sh Edge0/Audio8-TTS-Preview-0.6B-ONNX-INT4
+
 Floder layout:
 
 models/

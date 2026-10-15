@@ -34,7 +34,7 @@ class Sampler
     
 public:
     Sampler() = delete;
-    explicit Sampler(float temperature = 0.7, float top_p = 0.9, int top_k = 50);
+    explicit Sampler(float temperature = 0.7, float top_p = 0.9, int top_k = 50, int seed = 42);
     ~Sampler();
     Sampler(Sampler&&) = default;
     Sampler& operator=(Sampler&&) = default;

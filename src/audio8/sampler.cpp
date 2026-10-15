@@ -36,7 +36,7 @@ SOFTWARE.
 
 class Sampler::Impl {
 public:
-    Impl(float temperature = 0.7, float top_p = 0.9, int top_k = 50):
+    Impl(float temperature = 0.7, float top_p = 0.9, int top_k = 50, int seed = 42):
     temperature_(temperature),
     top_p_(top_p),
     top_k_(top_k),
@@ -44,7 +44,7 @@ public:
     semantic_end_id_(audio8::SEMATIC_END_ID),
     im_end_id_(audio8::IM_END_ID),
     slow_logits_layout_semantic_then_eos_(true),
-    rng_(42)
+    rng_(seed)
     {}
 
     int sample(const std::vector<float>& logits) {
@@ -193,8 +193,8 @@ private:
     std::mt19937 rng_;
 };
 
-Sampler::Sampler(float temperature, float top_p, int top_k) : 
-pImpl{ std::make_unique<Impl>(temperature, top_p, top_k) }
+Sampler::Sampler(float temperature, float top_p, int top_k, int seed) : 
+pImpl{ std::make_unique<Impl>(temperature, top_p, top_k, seed) }
 {};
 
 Sampler::~Sampler() = default;

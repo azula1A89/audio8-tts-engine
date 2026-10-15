@@ -79,6 +79,7 @@ private:
         int window_width = 1500;
         int window_height = 610;
         RuntimeConfig runtime_config;
+        SamplingConfig sampling_config;
     } settings_;
 
 public:
@@ -120,6 +121,10 @@ public:
             else if (key == "codec_encoder_thread_num") setting->runtime_config.codec_encoder_thread_num = std::stoi(value);
             else if (key == "codec_decoder_thread_num") setting->runtime_config.codec_decoder_thread_num = std::stoi(value);
             else if (key == "execution_provider") setting->runtime_config.execution_provider = static_cast<ExecutionProvider>(std::stoi(value));
+            else if (key == "temperature") setting->sampling_config.temperature = std::stof(value);
+            else if (key == "top_p") setting->sampling_config.top_p = std::stof(value);
+            else if (key == "top_k") setting->sampling_config.top_k = std::stoi(value);
+            else if (key == "seed") setting->sampling_config.seed = std::stoi(value);
         } catch (const std::exception&) {
             fmt::print("Failed to parse setting: {}\n", key);
         }
@@ -149,6 +154,10 @@ public:
         buf->appendf("codec_encoder_thread_num=%d\n", setting->runtime_config.codec_encoder_thread_num);
         buf->appendf("codec_decoder_thread_num=%d\n", setting->runtime_config.codec_decoder_thread_num);
         buf->appendf("execution_provider=%d\n", static_cast<int>(setting->runtime_config.execution_provider));
+        buf->appendf("temperature=%.2f\n", setting->sampling_config.temperature);
+        buf->appendf("top_p=%.2f\n", setting->sampling_config.top_p);
+        buf->appendf("top_k=%d\n", setting->sampling_config.top_k);
+        buf->appendf("seed=%d\n", setting->sampling_config.seed);
         buf->append("\n"); 
     }
 
@@ -183,6 +192,10 @@ public:
         int id; 
         std::string text;
         std::string voice;
+        float temperature;
+        float top_p;
+        int top_k;
+        int seed;
         bool selected;
         bool done;
         size_t hash() const {
@@ -233,6 +246,10 @@ public:
             config.id = cfg["id"];
             config.text = cfg["text"];
             config.voice = cfg["voice"];
+            config.temperature = cfg["temperature"];
+            config.top_p = cfg["top_p"];
+            config.top_k = cfg["top_k"];
+            config.seed = cfg["seed"];
             config.selected = cfg["selected"];
             config.done = cfg["done"];
             session->configs().push_back(config);
@@ -401,6 +418,10 @@ public:
             cfg["id"] = config.id;
             cfg["text"] = config.text;
             cfg["voice"] = config.voice;
+            cfg["temperature"] = config.temperature;
+            cfg["top_p"] = config.top_p;
+            cfg["top_k"] = config.top_k;
+            cfg["seed"] = config.seed;
             cfg["selected"] = config.selected;
             cfg["done"] = config.done;
             save["configs"].push_back(cfg);
@@ -521,7 +542,7 @@ void render_frame(GLFWwindow* window) {
         if ( ctx->is_initialized ) {
             ctx->is_loading = true;
             ctx->engine_status = std::async(std::launch::async,[ctx](){
-                ctx->engine->preload_model();
+                // ctx->engine->preload_model();
             });
         }
     }
@@ -814,6 +835,10 @@ void render_menubar( GuiContext& ctx ) {
                             request.id = item.id;
                             request.text = item.text;
                             request.voice_name = item.voice;
+                            request.sampling.temperature = item.temperature;
+                            request.sampling.top_p = item.top_p;
+                            request.sampling.top_k = item.top_k;
+                            request.sampling.seed = item.seed;
                             request.max_new_tokens = 1024;
                             ctx.engine->push(request);
                             ctx.session->request_count()++;
@@ -1196,6 +1221,14 @@ void render_segmentation_table( GuiContext& ctx ) {
                     if ( ImGui::Button(TR("update segmentation"), {-1,0}) ) {
                         btn_update_seg = true;
                     }
+                    
+                    if ( ImGui::CollapsingHeader("sampler settings") ) {
+                        bool changed = ImGui::DragFloat("temperature", &ctx.ini.get().sampling_config.temperature, 0.01f, 0.0f, 1.0f);
+                        changed |= ImGui::DragFloat("top_p", &ctx.ini.get().sampling_config.top_p, 0.01f, 0.0f, 1.0f);
+                        changed |= ImGui::DragInt("top_k", &ctx.ini.get().sampling_config.top_k, 1.0f, 0, 4096);
+                        changed |= ImGui::DragInt("seed", &ctx.ini.get().sampling_config.seed);
+                        if ( changed ) { ctx.ini.sync(); }
+                    }
                     ImGui::EndPopup();
                 }
 
@@ -1306,7 +1339,31 @@ void render_segmentation_table( GuiContext& ctx ) {
                                 ctx.session->configs()[seq].selected = true;
                             }
                         }
-                        ImGui::SetItemTooltip("Hash: %zu", cfg.hash());
+                        if ( ImGui::BeginPopupContextItem() ) {
+                            last_selected_seq = seq;
+                            ctx.session->unselected_all();
+                            ctx.session->configs()[seq].selected = true;
+                            ImGui::DragFloat("temperature", &cfg.temperature, 0.01f, 0.0f, 1.0f);
+                            ImGui::DragFloat("top_p", &cfg.top_p, 0.01f, 0.0f, 1.0f);
+                            ImGui::DragInt("top_k", &cfg.top_k, 1.0f, 0, 4096);
+                            ImGui::DragInt("seed", &cfg.seed);
+                            ImGui::EndPopup();
+                        }
+                        if ( ImGui::BeginItemTooltip() ) {
+                            ImGui::Text("hash: %zu", cfg.hash());
+
+                            const ImColor normal = ImGui::GetStyle().Colors[ImGuiCol_Text];
+                            const ImColor red = ImColor(200,0,0,255);
+                            bool changed = cfg.temperature != ctx.ini.get().sampling_config.temperature;
+                            ImGui::TextColored(changed?red:normal, "temperature: %.3f", cfg.temperature);
+                            changed = cfg.top_p != ctx.ini.get().sampling_config.top_p;
+                            ImGui::TextColored(changed?red:normal, "top_p: %.3f", cfg.top_p);
+                            changed = cfg.top_k != ctx.ini.get().sampling_config.top_k;
+                            ImGui::TextColored(changed?red:normal, "top_k: %d", cfg.top_k);
+                            changed = cfg.seed != ctx.ini.get().sampling_config.seed;
+                            ImGui::TextColored(changed?red:normal, "seed: %d", cfg.seed);
+                            ImGui::EndTooltip();
+                        }
 
                         if (ImGui::IsItemFocused()) {
                             if (ImGui::IsMouseDoubleClicked(0)) {
@@ -1529,6 +1586,10 @@ void render_main_window( GuiContext& ctx ) {
                     item.id = i;
                     item.text = chunks.value()[i];
                     item.voice = ctx.ini.get().default_voice;
+                    item.temperature = ctx.ini.get().sampling_config.temperature;
+                    item.top_p = ctx.ini.get().sampling_config.top_p;
+                    item.top_k = ctx.ini.get().sampling_config.top_k;
+                    item.seed = ctx.ini.get().sampling_config.seed;
                     item.selected = false;
                     item.done = false;
                     ctx.session->configs().push_back(item);

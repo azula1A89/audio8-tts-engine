@@ -410,6 +410,7 @@ public:
         std::list<int> previous;
         code_frame codebooks;
         std::vector<code_frame> frames;
+        sampler_ = make_unique_nothrow<Sampler>(request.sampling.temperature, request.sampling.top_p, request.sampling.top_k, request.sampling.seed);
 
         for (int step = 0; step < request.max_new_tokens; step++) {
             if ( cancel_requested_.load() ) {
@@ -504,7 +505,8 @@ public:
         std::list<int> previous;
         code_frame codebooks;
         std::vector<code_frame> frames;
-
+        sampler_ = make_unique_nothrow<Sampler>(request.sampling.temperature, request.sampling.top_p, request.sampling.top_k, request.sampling.seed);
+        
         for (int step = 0; step < request.max_new_tokens; step++) {
             if ( cancel_requested_.load() ) {
                 return;

@@ -88,7 +88,13 @@ struct RuntimeConfig {
     uint32_t codec_encoder_thread_num = 4;
     ExecutionProvider execution_provider = ExecutionProvider::CPU;
 };
-struct SamplingConfig { };
+struct SamplingConfig {
+    float temperature;
+    float top_p;
+    int top_k;
+    int seed;
+    SamplingConfig(float temperature = 0.7, float top_p = 0.9, int top_k = 50, int seed = 42) : temperature(temperature), top_p(top_p), top_k(top_k), seed(seed) {}
+};
 
 template<class T>
 class Tensor
