@@ -5,9 +5,7 @@
 
 #include <miniz.h>
 #include <miniz_zip.h>
-#include <mobi_wrapper.hpp>
 #include <pugixml_wrapper.hpp>
-
 #include <text_extractor.hpp>
 
 using namespace pugixml_wrapper;
@@ -160,11 +158,6 @@ public:
         load_xml(document, contents, "FB2 document");
         return extract_document_text(document, true, false);
     };
-
-    // libmobi
-    std::string from_mobi(const std::filesystem::path& file) {
-        return mobi_wrapper::from_mobi(file);
-    };
 };
 
 TextExtractor::TextExtractor() : pImpl{std::make_unique<Impl>()} {}
@@ -172,4 +165,3 @@ TextExtractor::~TextExtractor() = default;
 std::string TextExtractor::from_epub(const std::filesystem::path& file) { return pImpl->from_epub(file); }
 std::string TextExtractor::from_text(const std::filesystem::path& file) { return pImpl->from_text(file); }
 std::string TextExtractor::from_fb2(const std::filesystem::path& file) { return pImpl->from_fb2(file); }
-std::string TextExtractor::from_mobi(const std::filesystem::path& file) { return pImpl->from_mobi(file); }
