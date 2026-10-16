@@ -22,7 +22,7 @@
 
 cmake_minimum_required(VERSION 3.26)
 
-project(audio8 CXX)
+project(audio8 C CXX)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -71,10 +71,14 @@ endif()
 include(FetchContent)
 
 FetchContent_Declare(
-    miniz
-    URL https://github.com/richgel999/miniz/archive/refs/tags/3.1.2.tar.gz
+    libminiz
+    URL https://github.com/richgel999/miniz/releases/download/3.1.2/miniz-3.1.2.zip
 )
-FetchContent_MakeAvailable(miniz)
+FetchContent_MakeAvailable(libminiz)
+if(NOT TARGET libminiz)
+    add_library(libminiz STATIC ${libminiz_SOURCE_DIR}/miniz.c)
+    target_include_directories(libminiz PUBLIC ${libminiz_SOURCE_DIR})
+endif()
 
 FetchContent_Declare(
     pugixml
@@ -268,7 +272,7 @@ target_link_libraries(libpugixml_wrapper PUBLIC pugixml)
 # TEXT EXTRACTOR
 add_library(text_extractor STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/text_extractor.cpp)
 target_include_directories(text_extractor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(text_extractor PRIVATE libpugixml_wrapper miniz)
+target_link_libraries(text_extractor PRIVATE libpugixml_wrapper libminiz)
 
 add_library(audio8 STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/audio8/audio8_engine.cpp

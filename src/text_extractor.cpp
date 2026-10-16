@@ -4,7 +4,6 @@
 #include <unordered_map>
 
 #include <miniz.h>
-#include <miniz_zip.h>
 #include <pugixml_wrapper.hpp>
 #include <text_extractor.hpp>
 
