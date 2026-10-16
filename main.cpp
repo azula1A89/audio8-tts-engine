@@ -1636,7 +1636,7 @@ void render_main_window( GuiContext& ctx ) {
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     PSTR lpCmdLine, INT nCmdShow)
 {
-    const char* argv[] = {"ChoreoGraph"};
+    const char* argv[] = {"audio-book-maker"};
     return main(1, (char**)argv);
 }
 #endif
