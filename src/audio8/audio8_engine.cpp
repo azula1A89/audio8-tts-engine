@@ -43,27 +43,6 @@ SOFTWARE.
 
 using namespace std::chrono_literals;
 
-namespace miniaudio_impl {
-    MiniAudio miniaudio;
-    void track_add(const std::string& path) { miniaudio.track_add(path); }
-    void track_delete(int index) { miniaudio.track_delete(index); }
-    void track_clear() { miniaudio.track_clear(); };
-    size_t track_count() { return miniaudio.track_count(); }
-    size_t buffer_length() { return miniaudio.buffer_length(); }
-    bool play() { return miniaudio.play(); }
-    bool pause() { return miniaudio.pause(); }
-    bool stop() { return miniaudio.stop(); }
-    void export_audio(int max_length_sec, const char* export_path, uint32_t sample_rate) { 
-        miniaudio.export_audio(max_length_sec, export_path, sample_rate); 
-    };
-    bool play_file(const char* file) { return miniaudio.play_file(file); }
-    void stop_file() { miniaudio.stop_file(); }
-    bool is_playing_file() { return miniaudio.is_playing_file(); }
-    bool is_playing_list() { return miniaudio.is_playing_list(); };
-    std::vector<float> load_audio( const std::string& path ) { return  miniaudio.load_audio(path); };
-    void wav_write(const float *buff, uint64_t count, const char* name) { miniaudio.wav_write(buff, count, name); };
-}
-
 class Audio8Engine::Impl
 {
 private:
@@ -282,9 +261,9 @@ public:
     }
 
     void registration(std::string voice_name, std::string transcript,
-                  std::filesystem::path audio) {
+                  const std::vector<float>& pcm) {
         if ( voice_manager_ ) {
-            voice_manager_->registration(voice_name, transcript, audio);
+            voice_manager_->registration(voice_name, transcript, pcm);
         }
     }
 
@@ -617,8 +596,8 @@ Audio8Engine::~Audio8Engine() = default;
 
 std::vector<std::string> Audio8Engine::list_voices() { return pImpl->list_voices(); }
 
-void Audio8Engine::registers(std::string voice_name, std::string transcript, std::filesystem::path audio) {
-    pImpl->registration(voice_name, transcript, audio);
+void Audio8Engine::registers(std::string voice_name, std::string transcript, const std::vector<float>& pcm) {
+    pImpl->registration(voice_name, transcript, pcm);
 }
 
 bool Audio8Engine::initialize(const std::filesystem::path& model_dir) {

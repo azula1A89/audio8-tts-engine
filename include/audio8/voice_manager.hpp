@@ -54,7 +54,7 @@ public:
     bool is_running();
     void terminate();
     std::vector<std::string> list_voices();
-    void registration(std::string voice_name, std::string transcript, std::filesystem::path audio);
+    void registration(std::string voice_name, std::string transcript, const std::vector<float>& pcm);
     bool load_profile(std::string voice_name, VoiceProfile& profile);
     
 };

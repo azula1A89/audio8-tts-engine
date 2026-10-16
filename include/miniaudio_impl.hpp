@@ -26,6 +26,26 @@ SOFTWARE.
 #include <memory>
 #include <vector>
 #include <string>
+#include <functional>
+
+using current_track_callback = std::function<void(const std::string& file)>;
+namespace miniaudio_impl {
+    void track_add(const std::string& path);
+    void track_delete(int index);
+    void track_clear();
+    size_t track_count();
+    size_t buffer_length();
+    bool play();
+    bool pause();
+    bool stop();
+    void export_audio(int max_length_sec, const char* export_path = "sessions", uint32_t sample_rate = 44100U);
+    bool play_file(const char* file = "output.WAV");
+    void stop_file();
+    bool is_playing_file();
+    bool is_playing_list();
+    std::vector<float> load_audio( const std::string& path );
+    void wav_write(const float *buff, uint64_t count, const char* name = "output.WAV");
+};
 
 class MiniAudio {
     class Tracks;
@@ -44,6 +64,7 @@ public:
     void track_delete(int index);
     void track_clear();
     size_t track_count();
+    void set_current_track_callback(current_track_callback cb);
     void export_audio(int max_length_sec, const char* export_path = "sessions", uint32_t sample_rate = 44100);
     size_t buffer_length();
     bool play();

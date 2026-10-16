@@ -43,12 +43,33 @@ std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
     }
 }
 
+namespace miniaudio_impl {
+    MiniAudio miniaudio;
+    void track_add(const std::string& path) { miniaudio.track_add(path); }
+    void track_delete(int index) { miniaudio.track_delete(index); }
+    void track_clear() { miniaudio.track_clear(); };
+    size_t track_count() { return miniaudio.track_count(); }
+    size_t buffer_length() { return miniaudio.buffer_length(); }
+    bool play() { return miniaudio.play(); }
+    bool pause() { return miniaudio.pause(); }
+    bool stop() { return miniaudio.stop(); }
+    void export_audio(int max_length_sec, const char* export_path, uint32_t sample_rate) { 
+        miniaudio.export_audio(max_length_sec, export_path, sample_rate); 
+    };
+    bool play_file(const char* file) { return miniaudio.play_file(file); }
+    void stop_file() { miniaudio.stop_file(); }
+    bool is_playing_file() { return miniaudio.is_playing_file(); }
+    bool is_playing_list() { return miniaudio.is_playing_list(); };
+    std::vector<float> load_audio( const std::string& path ) { return  miniaudio.load_audio(path); };
+    void wav_write(const float *buff, uint64_t count, const char* name) { miniaudio.wav_write(buff, count, name); };
+}
+
 class MiniAudio::Tracks {
 public:
     Tracks(ma_uint32 channels, ma_uint32 sample_rate)
         : channels_(channels), sample_rate_(sample_rate), 
           cursor_(0), total_frames_(0), 
-          decoder_open_(false), current_track_idx_(0)
+          decoder_open_(false), current_track_idx_(0), current_track_cb_(nullptr)
     {
         static ma_data_source_vtable vtable = {
             read_callback,
@@ -160,6 +181,10 @@ public:
         return total_frames_ * channels_;
     }
 
+    void set_current_track_callback(current_track_callback cb) {
+        current_track_cb_ = cb;
+    }
+
     ma_data_source* get_ma_data_source() {
         return (ma_data_source*)&data_source_impl_.base;
     }
@@ -182,6 +207,7 @@ private:
     bool decoder_open_;
     size_t current_track_idx_;
     ma_decoder current_decoder_;
+    current_track_callback current_track_cb_;
 
     void close_current_decoder_nolock() {
         if (decoder_open_) {
@@ -195,6 +221,7 @@ private:
         
         if (track_idx >= tracks_.size()) return false;
 
+        if ( current_track_cb_ ) current_track_cb_(tracks_[track_idx].filename());
         ma_decoder_config config = ma_decoder_config_init(ma_format_f32, channels_, sample_rate_);
         if (ma_decoder_init_file(tracks_[track_idx].string().c_str(), &config, &current_decoder_) != MA_SUCCESS) {
             return false;
@@ -595,6 +622,12 @@ size_t MiniAudio::track_count() {
         return tracks_->track_count();
     }
     return 0;
+}
+
+void MiniAudio::set_current_track_callback(current_track_callback cb) {
+    if ( tracks_ ) {
+        tracks_->set_current_track_callback(cb);
+    }
 }
 
 void MiniAudio::export_audio( int max_length_sec, const char* export_path, uint32_t sample_rate ) {

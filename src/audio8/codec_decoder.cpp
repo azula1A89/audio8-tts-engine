@@ -150,8 +150,6 @@ public:
 
             if ( on_pcm_update_ ) {
                 on_pcm_update_(out, frames.first);
-            } else {
-                miniaudio_impl::wav_write(out.data(), out.size());
             }
 
         } catch (const Ort::Exception& exception) {

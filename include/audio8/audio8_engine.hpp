@@ -42,24 +42,6 @@ std::unique_ptr<T> make_unique_nothrow(Args&&... args) noexcept {
     }
 }
 
-namespace miniaudio_impl {
-    void track_add(const std::string& path);
-    void track_delete(int index);
-    void track_clear();
-    size_t track_count();
-    size_t buffer_length();
-    bool play();
-    bool pause();
-    bool stop();
-    void export_audio(int max_length_sec, const char* export_path = "sessions", uint32_t sample_rate = 44100U);
-    bool play_file(const char* file = "output.WAV");
-    void stop_file();
-    bool is_playing_file();
-    bool is_playing_list();
-    std::vector<float> load_audio( const std::string& path );
-    void wav_write(const float *buff, uint64_t count, const char* name = "output.WAV");
-};
-
 namespace audio8
 {
 constexpr int NUM_LAYERS = 24;
@@ -231,7 +213,7 @@ public:
     Audio8Engine& operator=(const Audio8Engine&) = delete;
     std::vector<std::string> list_voices();
     void registers(std::string voice_name, std::string transcript,
-                  std::filesystem::path audio);
+                  const std::vector<float>& pcm);
     bool initialize(const std::filesystem::path& model_dir = std::filesystem::current_path() / "models");
     bool preload_model();
     void uninit();

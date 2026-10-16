@@ -83,7 +83,7 @@ public:
         run_opts_.SetTerminate();
     }
 
-    void registration(std::string voice_name, std::string transcript, std::filesystem::path audio) {
+    void registration(std::string voice_name, std::string transcript, const std::vector<float>& pcm) {
         if ( !initialized_ ) {
             initialized_ = initialize();
             if ( !initialized_ ) return;
@@ -117,7 +117,6 @@ public:
             }
         }
 
-        std::vector<float> pcm = miniaudio_impl::load_audio(audio.string());
         std::vector<int64_t> codes;
         encode(pcm, codes);
 
@@ -299,9 +298,9 @@ std::vector<std::string> VoiceManager::list_voices() { return pImpl->list_voices
 void VoiceManager::registration(
     std::string voice_name, 
     std::string transcript, 
-    std::filesystem::path audio){
+    const std::vector<float>& pcm){
 
-    pImpl->registration(voice_name, transcript, audio);
+    pImpl->registration(voice_name, transcript, pcm);
 };
 
 bool VoiceManager::load_profile(std::string voice_name, VoiceProfile& profile) { return pImpl->load_profile(voice_name, profile); }

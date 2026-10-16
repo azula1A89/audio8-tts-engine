@@ -324,13 +324,13 @@ public:
     }
 
     // save PCM data to a wav file
-    void save_to_wav(const std::vector<float> &track, const int& id) {
+    void save_to_wav(const std::vector<float> &pcm, const int& id) {
         // find the configs_ item whose ID matches the given ID.
         auto cfg = std::find_if(configs_.begin(), configs_.end(), [&id](const config_item_s& item){ return item.id == id; });
         if ( cfg == configs_.end() ) return;
 
         auto wav_file = root_ / cache_ / fmt::format("{}.wav", cfg->hash());
-        miniaudio_impl::wav_write(track.data(), track.size(), wav_file.string().c_str());
+        miniaudio_impl::wav_write(pcm.data(), pcm.size(), wav_file.string().c_str());
         track_count_ = track_count();
         done_id_.store(id);
     };
@@ -1505,7 +1505,7 @@ void render_registration_popup( GuiContext& ctx ) {
             } else if ( !std::filesystem::exists(ref_audio_path) ) {
             } else {
                 ctx.registration_status = std::async(std::launch::async, [&](){
-                    ctx.engine->registers(new_voice_name, transcript, ref_audio_path);
+                    ctx.engine->registers(new_voice_name, transcript, miniaudio_impl::load_audio(ref_audio_path));
                 });
                     ImGui::CloseCurrentPopup();
             }

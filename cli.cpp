@@ -26,6 +26,7 @@ SOFTWARE.
 #include <fmt/color.h>
 #include <fmt/ranges.h>
 #include <audio8_engine.hpp>
+#include <miniaudio_impl.hpp>
 #include <iostream>
 
 using namespace std::literals;
@@ -61,8 +62,10 @@ int main(int argc, char** argv) {
         request.voice_name = "anthony";
         request.max_new_tokens = 1024;
         fmt::print("\n\n default voice \n\n");
-        engine->synthesize( request, progress);
-        miniaudio_impl::play();
+        engine->synthesize( request, progress, nullptr, [](std::vector<float> pcm_in, const int id_in){
+             miniaudio_impl::wav_write(pcm_in.data(), pcm_in.size(), "output.WAV");
+        });
+        miniaudio_impl::play_file();
     } else if ( argc == 3 ) {
 
         TTSRequest request;
@@ -70,11 +73,13 @@ int main(int argc, char** argv) {
         request.voice_name = argv[2];
         request.max_new_tokens = 1024;
         fmt::print("\n\n try using {} as reference voice.\n\n", argv[2]);
-        engine->synthesize( request, progress);
-        miniaudio_impl::play();
+        engine->synthesize( request, progress, nullptr, [](std::vector<float> pcm_in, const int id_in){
+             miniaudio_impl::wav_write(pcm_in.data(), pcm_in.size(), "output.WAV");
+        });
+        miniaudio_impl::play_file();
     } else if ( argc == 4 ) {
 
-        engine->registers(argv[1], argv[2], argv[3]);
+        engine->registers(argv[1], argv[2], miniaudio_impl::load_audio(argv[3]));
         fmt::print("\n\n voice registration done. \n\n");
     }
 
@@ -83,7 +88,7 @@ int main(int argc, char** argv) {
     // press enter to exit
     fmt::print("\n\n Press Enter to exit...\n");
     std::cin.get();
-    miniaudio_impl::stop();
+    miniaudio_impl::stop_file();
 
     return 0;
 }
