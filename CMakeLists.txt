@@ -217,7 +217,11 @@ else()
     set(ONNXHASH SHA256=c3fddc4f139a045b0c4902c57410f0694f1c2fdf9b6939fbe38b1aeae7cd14ba)
     set(ONNX_DLL_NAME "libonnxruntime.so.1")
     set(ONNX_LIB_NAME "libonnxruntime.so.1")
-    set(GLEW_DLL_PATH ${CMAKE_CURRENT_BINARY_DIR}/lib/libGLEW.so.2.3)
+    if( CMAKE_BUILD_TYPE STREQUAL "Debug" )
+        set(GLEW_DLL_PATH ${CMAKE_CURRENT_BINARY_DIR}/lib/libGLEWd.so.2.3)
+    elseif ( CMAKE_BUILD_TYPE STREQUAL "Release")
+        set(GLEW_DLL_PATH ${CMAKE_CURRENT_BINARY_DIR}/lib/libGLEW.so.2.3)
+    endif()
 endif()
 
 FetchContent_Declare(
