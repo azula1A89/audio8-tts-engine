@@ -1293,6 +1293,7 @@ void render_segmentation_table( GuiContext& ctx ) {
                 while (clipper.Step()) {
                     for (int seq = clipper.DisplayStart; seq < clipper.DisplayEnd; seq++) {
                         auto& cfg = ctx.session->configs()[seq];
+                        size_t hash = cfg.hash();
                         bool generate_ongoing = ( cfg.id == ctx.generate_id );
                             generate_ongoing &= ctx.engine->is_busy();
                         bool decode_ongoing = ( cfg.id == ctx.decode_id );
@@ -1300,8 +1301,14 @@ void render_segmentation_table( GuiContext& ctx ) {
                         bool selected = generate_ongoing;
                             selected |= ( cfg.selected );
 
+                        bool playing_file_ongoing = ctx.session->is_playing_file() && last_playing_hash == hash;
+                        bool playing_list_ongoing = ctx.session->is_playing_list() && ctx.session->current_playing_hash() == hash;
+
                         if ( generate_ongoing ) {
                             ImGui::SetScrollHereY(0.5f);
+                        } else if ( playing_list_ongoing ) {
+                            ImGui::SetScrollHereY(0.5f);
+                            selected = true;
                         }
 
                         imgui_scoped::ID id(seq);
@@ -1313,16 +1320,16 @@ void render_segmentation_table( GuiContext& ctx ) {
                             //toggle play
                             if ( !ctx.session->is_playing_file() ) {
 
-                                if ( ctx.session->play_id(cfg.hash()) ) {
-                                    last_playing_hash = cfg.hash();
+                                if ( ctx.session->play_id(hash) ) {
+                                    last_playing_hash = hash;
                                 }
-                            } else if(last_playing_hash == cfg.hash()) {
+                            } else if(last_playing_hash == hash) {
                                 ctx.session->stop_file();
                                 last_playing_hash = 0;
                             } else {
                                 ctx.session->stop_file();
-                                if ( ctx.session->play_id(cfg.hash()) ) {
-                                    last_playing_hash = cfg.hash();
+                                if ( ctx.session->play_id(hash) ) {
+                                    last_playing_hash = hash;
                                 }
                             }
 
@@ -1355,7 +1362,7 @@ void render_segmentation_table( GuiContext& ctx ) {
                             ImGui::EndPopup();
                         }
                         if ( ImGui::BeginItemTooltip() ) {
-                            ImGui::Text("hash: %zu", cfg.hash());
+                            ImGui::Text("hash: %zu", hash);
 
                             const ImColor normal = ImGui::GetStyle().Colors[ImGuiCol_Text];
                             const ImColor red = ImColor(200,0,0,255);
@@ -1405,8 +1412,7 @@ void render_segmentation_table( GuiContext& ctx ) {
                             int arcs = decode_ongoing?2:1;
                             
                             ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
-                        } else if(  ctx.session->is_playing_file() && last_playing_hash == cfg.hash() ||
-                                    ctx.session->is_playing_list() && ctx.session->current_playing_hash() == cfg.hash() ) {
+                        } else if(  playing_list_ongoing || playing_file_ongoing ) {
                             ImGui::SameLine();
                             float r = ImGui::GetFrameHeight() * 0.5f;
                             auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
