@@ -204,9 +204,18 @@ private:
             case U'—': case U'（': case U'）': case U'【': case U'】':
             case U'《': case U'》': case U'“': case U'”': case U'‘': case U'’':
             case U'『': case U'』': case U'「': case U'」':
+                punctuation_replace(c);
                 return true;
             default:
                 return false;
+        }
+    }
+
+    void punctuation_replace(char32_t& c) {
+        switch (c) {
+            case U'—': c = U'-'; break;
+            case U'…': c = U'。'; break;
+             default:;
         }
     }
 
