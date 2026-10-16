@@ -35,6 +35,7 @@ namespace miniaudio_impl {
     void track_clear();
     size_t track_count();
     size_t buffer_length();
+    void set_current_track_callback(current_track_callback cb);
     bool play();
     bool pause();
     bool stop();

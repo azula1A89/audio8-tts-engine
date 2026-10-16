@@ -50,6 +50,7 @@ namespace miniaudio_impl {
     void track_clear() { miniaudio.track_clear(); };
     size_t track_count() { return miniaudio.track_count(); }
     size_t buffer_length() { return miniaudio.buffer_length(); }
+    void set_current_track_callback(current_track_callback cb) { miniaudio.set_current_track_callback(cb); }
     bool play() { return miniaudio.play(); }
     bool pause() { return miniaudio.pause(); }
     bool stop() { return miniaudio.stop(); }

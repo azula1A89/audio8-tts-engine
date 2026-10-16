@@ -212,6 +212,7 @@ private:
     std::string origin_text_ = "";
     std::atomic<int> done_id_ = -1;
     size_t json_hash_ = 0;
+    size_t current_playing_ = 0;
     
 public:
     Session(std::filesystem::path root = "sessions", 
@@ -223,6 +224,12 @@ public:
             std::filesystem::create_directories(cache_path);
         }
         rebuild_playlist();
+        miniaudio_impl::set_current_track_callback([this](const std::string& file){
+            const char* eq_pos = strchr(file.c_str(), '.');
+            if (!eq_pos) return;
+            std::string name(file.c_str(), eq_pos - file.c_str());
+            this->current_playing_ = std::stoul(name);
+        });
     };
 
     ~Session() {
@@ -303,6 +310,7 @@ public:
 
     void stop_playlist() {
         miniaudio_impl::stop();
+        current_playing_ = 0;
     }
 
     bool is_playing_list() {
@@ -321,6 +329,10 @@ public:
 
     bool is_playing_file() {
         return miniaudio_impl::is_playing_file();
+    }
+
+    size_t current_playing_hash() const {
+        return current_playing_;
     }
 
     // save PCM data to a wav file
@@ -1393,7 +1405,8 @@ void render_segmentation_table( GuiContext& ctx ) {
                             int arcs = decode_ongoing?2:1;
                             
                             ImSpinner::SpinnerRainbow("ongoing", r, 2.f, color, 8.f, 0.0f, ImSpinner::PI_2, arcs);
-                        } else if(  ctx.session->is_playing_file() && last_playing_hash == cfg.hash() ) {
+                        } else if(  ctx.session->is_playing_file() && last_playing_hash == cfg.hash() ||
+                                    ctx.session->is_playing_list() && ctx.session->current_playing_hash() == cfg.hash() ) {
                             ImGui::SameLine();
                             float r = ImGui::GetFrameHeight() * 0.5f;
                             auto color = ImGui::GetStyle().Colors[ImGuiCol_Text];
